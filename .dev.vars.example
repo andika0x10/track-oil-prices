@@ -1,0 +1,2 @@
+# Copy to .dev.vars and enter your registered EIA key. Never commit .dev.vars.
+EIA_API_KEY=

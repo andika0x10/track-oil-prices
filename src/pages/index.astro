@@ -1,11 +1,14 @@
 ---
-import Welcome from '../components/Welcome.astro';
+import Dashboard from '../components/Dashboard';
 import Layout from '../layouts/Layout.astro';
 
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 ---
 
 <Layout>
-	<Welcome />
+	<Dashboard client:only="react">
+		<div slot="fallback" class="app-shell">
+			<header class="site-header flex items-center"><a class="brand" href="/">brent outlook.</a></header>
+			<main class="market-section"><h1>The price of now.</h1><p class="section-description" role="status">Loading live Brent prices and the benchmark outlook…</p><noscript>Enable JavaScript to view live prices, charts, and projections.</noscript></main>
+		</div>
+	</Dashboard>
 </Layout>
