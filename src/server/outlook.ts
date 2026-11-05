@@ -4,7 +4,12 @@ import {
   monthIndex,
   normalizeObservations,
 } from "../lib/data";
-import type { Outlook } from "../lib/types";
+import type {
+  DriverSeries,
+  DriverValues,
+  Observation,
+  Outlook,
+} from "../lib/types";
 import { ServiceError, upstreamJson } from "./http";
 import type { runModel } from "./model";
 
@@ -15,14 +20,15 @@ export interface OutlookEnv {
 type ModelEngine = (
   values: number[],
   horizon: number,
+  drivers: DriverValues,
 ) => ReturnType<typeof runModel> | Promise<ReturnType<typeof runModel>>;
 export function createOutlookService(
-  engine: ModelEngine = async (values, horizon) => {
+  engine: ModelEngine = async (values, horizon, drivers) => {
     const { runModel } = await import("./model");
-    return runModel(values, horizon);
+    return runModel(values, horizon, drivers);
   },
 ) {
-  const CACHE_KEY = "brent-outlook:0.1.0";
+  const CACHE_KEY = "brent-outlook:0.2.0";
   let memory: Outlook | undefined;
   let pending: Promise<Outlook> | undefined;
 
@@ -76,12 +82,64 @@ export function createOutlookService(
       );
     }
     const lastObservation = observations.at(-1)!.month;
+    // Use observed, lagged fundamentals, never assumed future production/stocks.
+    const series = [
+      {
+        series: "PET.MCESTUS1.M",
+        name: "U.S. commercial crude inventories",
+        unit: "thousand barrels",
+      },
+      {
+        series: "PET.MCRFPUS2.M",
+        name: "U.S. crude oil production",
+        unit: "thousand barrels/day",
+      },
+    ];
+    const drivers: DriverSeries[] = await Promise.all(
+      series.map(async (descriptor) => {
+        const response = (await upstreamJson(
+          `https://api.eia.gov/v2/seriesid/${descriptor.series}?${new URLSearchParams({ api_key: env.EIA_API_KEY! })}`,
+        )) as { response?: { data?: unknown; total?: string | number } };
+        if (Number(response.response?.total) > 5000)
+          throw new ServiceError(
+            "INCOMPLETE_DRIVERS",
+            "The supply and inventory history could not be loaded in full.",
+          );
+        let rows: Observation[];
+        try {
+          rows = normalizeObservations(response.response?.data).filter(
+            (row) => row.month >= observations[0].month,
+          );
+        } catch {
+          throw new ServiceError(
+            "INCOMPLETE_DRIVERS",
+            "The supply and inventory history is incomplete. The last valid outlook will be retained.",
+          );
+        }
+        const latest = rows.at(-1)?.month;
+        if (!latest || latest < addMonths(lastObservation, -2))
+          throw new ServiceError(
+            "STALE_DRIVERS",
+            "New supply and inventory data is needed to refresh the outlook.",
+          );
+        return { ...descriptor, observations: rows, lastObservation: latest };
+      }),
+    );
+    const aligned = (rows: Observation[]) => {
+      const map = new Map(rows.map((row) => [row.month, row.value]));
+      return observations.map((row) => map.get(row.month) ?? null);
+    };
+    const driverValues: DriverValues = {
+      stocks: aligned(drivers[0].observations),
+      production: aligned(drivers[1].observations),
+    };
     const now = new Date().toISOString();
     const targetMonth = addMonths(currentMonth(), 36);
     if (
       cached &&
       cached.projections.at(-1)!.month >= targetMonth &&
-      JSON.stringify(cached.observations) === JSON.stringify(observations)
+      JSON.stringify(cached.observations) === JSON.stringify(observations) &&
+      JSON.stringify(cached.drivers) === JSON.stringify(drivers)
     ) {
       const checked: Outlook = {
         ...cached,
@@ -102,6 +160,7 @@ export function createOutlookService(
       computed = await engine(
         observations.map((row) => row.value),
         horizon,
+        driverValues,
       );
     } catch {
       throw new ServiceError(
@@ -119,6 +178,7 @@ export function createOutlookService(
       checkedAt: now,
       lastObservation,
       observations,
+      drivers,
       model,
       performance: computed.performance,
       projections: points.map((point) => ({

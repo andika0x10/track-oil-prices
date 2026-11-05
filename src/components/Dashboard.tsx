@@ -221,7 +221,7 @@ function MonthDetail({
             <dl className="detail-meta">
               <div>
                 <dt>Model</dt>
-                <dd>{outlook?.model.model}</dd>
+                <dd>{point.model || outlook?.model.model}</dd>
               </div>
               <div>
                 <dt>Last observed month</dt>
@@ -363,13 +363,11 @@ export default function Dashboard() {
       !outlook
         ? []
         : [
-            ...outlook.observations
-              .slice(-12)
-              .map((r) => ({
-                time: Date.parse(`${r.month}-01T00:00:00Z`),
-                value: r.value,
-                month: r.month,
-              })),
+            ...outlook.observations.slice(-12).map((r) => ({
+              time: Date.parse(`${r.month}-01T00:00:00Z`),
+              value: r.value,
+              month: r.month,
+            })),
             ...outlook.projections
               .filter(
                 (p) =>
@@ -672,12 +670,19 @@ export default function Dashboard() {
               </button>
             </p>
           )}
+          {outlook && (
+            <p className="history-note">
+              {outlook.model.model === "Last-observation baseline"
+                ? "No alternative cleared the validation threshold. Central estimates stay at the last observed price; ranges show uncertainty."
+                : "Each month uses a model selected from past forecast errors. Inputs include Brent history, U.S. crude inventories and production."}
+            </p>
+          )}
           <div className="outlook-explainer">
             <span className="info-dot">i</span>
             <p>
               Projections follow the Brent benchmark, not the Hyperliquid
-              contract. The shaded range reflects uncertainty, which grows over
-              longer horizons.
+              contract. The shaded range reflects historical forecast
+              uncertainty; actual prices can fall outside it.
             </p>
           </div>
           <div className="calendar-heading flex items-center justify-between gap-3">
@@ -774,18 +779,20 @@ export default function Dashboard() {
                   <span className="method-step">01</span>
                   <h3>Start with history</h3>
                   <p>
-                    Complete monthly Europe Brent spot observations from EIA.
-                    Live perpetual prices are provided separately by
-                    Hyperliquid.
+                    Complete monthly Brent prices, U.S. commercial crude
+                    inventories, and production from EIA. Fundamentals use a
+                    two-month publication lag. Live perpetual prices are
+                    provided separately by Hyperliquid.
                   </p>
                 </div>
                 <div>
                   <span className="method-step">02</span>
                   <h3>Test the model</h3>
                   <p>
-                    A damped trend model competes against the last observed
-                    price. Rolling-origin tests use at least 120 months of
-                    history and never train on future observations.
+                    Trend, mean reversion, and fundamental regression compete
+                    against the last observed price at each horizon. A candidate
+                    must reduce recent validation MAE by at least 2%. Only
+                    then-known forecast errors affect each historical selection.
                   </p>
                 </div>
                 <div>
@@ -801,7 +808,7 @@ export default function Dashboard() {
                 <>
                   <div className="model-summary">
                     <span>
-                      Selected model<strong>{outlook.model.model}</strong>
+                      Model selection<strong>{outlook.model.model}</strong>
                     </span>
                     <span>
                       Last calculated
@@ -810,10 +817,11 @@ export default function Dashboard() {
                   </div>
                   <div className="metrics-scroll">
                     <table>
-                      <caption>Out-of-sample model performance</caption>
+                      <caption>Forward-tested strategy performance</caption>
                       <thead>
                         <tr>
                           <th>Horizon</th>
+                          <th>Current model</th>
                           <th>Model MAE</th>
                           <th>Baseline MAE</th>
                           <th>Range coverage</th>
@@ -824,6 +832,7 @@ export default function Dashboard() {
                         {outlook.model.metrics.map((m) => (
                           <tr key={m.horizon}>
                             <th>{horizonLabel(m.horizon)}</th>
+                            <td>{m.selectedModel || outlook.model.model}</td>
                             <td>{money(m.mae)}</td>
                             <td>{money(m.baselineMae)}</td>
                             <td>
@@ -841,11 +850,27 @@ export default function Dashboard() {
                   </div>
                   <p className="method-small">
                     MAE is the average absolute forecast error in USD/barrel;
-                    lower is better. Coverage uses only errors whose outcomes
-                    were known at each test date. Selection uses the same
-                    backtest, so these are diagnostic results, not an
-                    independent final holdout.
+                    lower is better. Results cover the latest{" "}
+                    {outlook.model.evaluationMonths || 60} observed target
+                    months. Each historical forecast selected its model using
+                    only then-known errors, not the outcomes being evaluated.
+                    Current selections can differ from historical ones. Coverage
+                    also uses only previously matured errors. Horizons are
+                    measured from the last observed month.
                   </p>
+                  {outlook.drivers && (
+                    <p className="method-small">
+                      Fundamental data:{" "}
+                      {outlook.drivers
+                        .map(
+                          (driver) =>
+                            `${driver.name} through ${fullMonth(driver.lastObservation)}`,
+                        )
+                        .join("; ")}
+                      . Inputs are lagged by two months; future production and
+                      inventories are not assumed.
+                    </p>
+                  )}
                   <p className="method-small">
                     Engine {outlook.model.version} · Rust / WebAssembly ·{" "}
                     {outlook.performance.computationMs.toFixed(1)}ms computation
@@ -862,9 +887,10 @@ export default function Dashboard() {
               <p className="method-small">
                 Backtests use the currently available historical dataset, which
                 may include revisions. They do not recreate the exact releases
-                available at each past date. Price-only models do not directly
-                account for geopolitical shocks, supply decisions, or structural
-                market changes.
+                available at each past date. The lag is an availability
+                assumption, not a reconstruction of release vintages. U.S.
+                supply inputs do not represent the entire global market or
+                predict geopolitical shocks.
               </p>
             </div>
           )}

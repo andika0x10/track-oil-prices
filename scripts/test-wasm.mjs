@@ -48,6 +48,43 @@ function compare(a, b) {
   } else assert.equal(a, b);
 }
 compare(wasm, expected);
+const driverInput = {
+  ...input,
+  drivers: {
+    stocks: Array.from({ length: 240 }, (_, i) =>
+      i < 238 ? 400 + Math.cos(i / 7) * 20 : null,
+    ),
+    production: Array.from({ length: 240 }, (_, i) =>
+      i < 238 ? 10 + i * 0.01 + Math.sin(i / 10) * 0.2 : null,
+    ),
+  },
+};
+const nativeDrivers = spawnSync(
+  "cargo",
+  [
+    "run",
+    "--quiet",
+    "--locked",
+    "--release",
+    "--manifest-path",
+    "crates/outlook/Cargo.toml",
+    "--bin",
+    "native-fixture",
+    "--",
+    "--drivers",
+  ],
+  { encoding: "utf8" },
+);
+assert.equal(nativeDrivers.status, 0, nativeDrivers.stderr);
+compare(
+  JSON.parse(forecast(JSON.stringify(driverInput))),
+  JSON.parse(nativeDrivers.stdout),
+);
+assert.throws(() =>
+  forecast(
+    JSON.stringify({ ...input, drivers: { stocks: [1], production: [1] } }),
+  ),
+);
 assert.throws(() =>
   forecast(JSON.stringify({ values: [1, 2, 3], horizon: 36 })),
 );

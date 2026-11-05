@@ -10,6 +10,7 @@ const projections = Array.from({ length: 38 }, (_, i) => ({
   estimate: 75 + i * 0.1,
   lower: 60 - i * 0.2,
   upper: 90 + i * 0.4,
+  model: "Rolling mean reversion",
 }));
 const outlook = {
   source: "EIA",
@@ -26,7 +27,7 @@ const outlook = {
   projections,
   model: {
     version: "test-fixture",
-    model: "Last-observation baseline",
+    model: "Adaptive multi-model outlook",
     intervalLevel: 0.8,
     minimumTrainingMonths: 120,
     metrics: [
@@ -128,11 +129,16 @@ for (const width of [360, 390, 768, 1440]) {
     expect(await page.locator(".month-cell").first().innerText()).toBe(text);
     await page.locator(".month-cell").first().click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(
+      page
+        .getByRole("dialog")
+        .getByText("Rolling mean reversion", { exact: true }),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.getByRole("button", { name: "How it works" }).click();
     await expect(
-      page.getByText("Out-of-sample model performance"),
+      page.getByText("Forward-tested strategy performance"),
     ).toBeVisible();
     await expect(page.locator(".method-body")).toHaveCSS("opacity", "1");
     expect(

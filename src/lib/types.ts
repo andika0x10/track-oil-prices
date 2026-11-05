@@ -41,6 +41,18 @@ export interface Projection {
   estimate: number;
   lower: number;
   upper: number;
+  model?: string;
+}
+export interface DriverValues {
+  stocks: (number | null)[];
+  production: (number | null)[];
+}
+export interface DriverSeries {
+  series: string;
+  name: string;
+  unit: string;
+  lastObservation: string;
+  observations: Observation[];
 }
 export interface Metric {
   horizon: number;
@@ -49,6 +61,9 @@ export interface Metric {
   coverage: number | null;
   samples: number;
   coverageSamples: number;
+  selectedModel?: string;
+  validationMae?: number;
+  validationBaselineMae?: number;
 }
 export interface ModelResult {
   version: string;
@@ -57,6 +72,9 @@ export interface ModelResult {
   metrics: Metric[];
   minimumTrainingMonths: number;
   intervalLevel: number;
+  validationWindowMonths?: number;
+  evaluationMonths?: number;
+  driverLagMonths?: number;
 }
 export interface Outlook {
   source: "EIA";
@@ -67,6 +85,7 @@ export interface Outlook {
   checkedAt: string;
   lastObservation: string;
   observations: Observation[];
+  drivers?: DriverSeries[];
   projections: Projection[];
   model: Omit<ModelResult, "points">;
   performance: { initializationMs: number; computationMs: number };

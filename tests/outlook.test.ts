@@ -18,13 +18,15 @@ test("real Wasm service bootstraps, skips unchanged data, retains cache on failu
   });
   let calls = 0,
     offset = 0,
+    driverOffset = 0,
+    delayedDrivers = false,
     failure = false,
     storageFailure = false;
-  const service = createOutlookService((values, horizon) => {
+  const service = createOutlookService((values, horizon, drivers) => {
     calls++;
     return {
       result: JSON.parse(
-        forecast(JSON.stringify({ values, horizon })),
+        forecast(JSON.stringify({ values, horizon, drivers })),
       ) as ModelResult,
       performance: { initializationMs: 0, computationMs: 0 },
     };
@@ -43,15 +45,18 @@ test("real Wasm service bootstraps, skips unchanged data, retains cache on failu
     () => service.getOutlook({ OUTLOOK: cache }),
     /not available yet/,
   );
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url) => {
     if (failure) return new Response("", { status: 429 });
+    const fundamental = String(url).includes("/seriesid/");
+    const stocks = String(url).includes("MCESTUS1");
     return Response.json({
       response: {
         total: 240,
         data: Array.from({ length: 240 }, (_, i) => ({
           period: addMonths(currentMonth(), i - 240),
-          value: 65 + Math.sin(i / 9) * 15 + offset,
-        })),
+          value:
+            65 + Math.sin(i / 9) * 15 + offset + (stocks ? driverOffset : 0),
+        })).filter((_, i) => !fundamental || !delayedDrivers || i < 237),
       },
     });
   };
@@ -59,20 +64,34 @@ test("real Wasm service bootstraps, skips unchanged data, retains cache on failu
   assert.equal(first.freshness, "fresh");
   assert.equal(first.projections.at(-1)?.month, addMonths(currentMonth(), 36));
   assert.equal(calls, 1);
+  assert.equal(first.drivers?.length, 2);
+  assert.equal(first.model.version, "brent-0.2.0");
   const unchanged = await service.getOutlook(env, true);
   assert.equal(calls, 1);
   assert.equal(unchanged.generatedAt, first.generatedAt);
+  driverOffset = 3;
+  const revised = await service.getOutlook(env, true);
+  assert.equal(
+    calls,
+    2,
+    "A fundamental revision must invalidate the model cache",
+  );
+  assert.deepEqual(revised.observations, first.observations);
+  delayedDrivers = true;
+  assert.equal((await service.getOutlook(env, true)).freshness, "stale");
+  assert.equal(calls, 2, "Do not fit with missing lagged fundamentals");
+  delayedDrivers = false;
   failure = true;
   const stale = await service.getOutlook(env, true);
   assert.equal(stale.freshness, "stale");
-  assert.deepEqual(stale.projections, first.projections);
+  assert.deepEqual(stale.projections, revised.projections);
   failure = false;
   offset = 5;
   storageFailure = true;
   const retained = await service.getOutlook(env, true);
   assert.equal(retained.freshness, "stale");
-  assert.deepEqual(retained.projections, first.projections);
-  assert.equal(calls, 2);
+  assert.deepEqual(retained.projections, revised.projections);
+  assert.equal(calls, 3);
 });
 test("model initialization failure is a safe API error", async (t) => {
   const original = globalThis.fetch;

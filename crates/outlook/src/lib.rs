@@ -2,12 +2,21 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 const MIN_TRAIN: usize = 120;
-const VERSION: &str = "brent-0.1.0";
+const VERSION: &str = "brent-0.2.0";
+mod adaptive;
 
 #[derive(Deserialize)]
 pub struct Input {
     pub values: Vec<f64>,
     pub horizon: usize,
+    #[serde(default)]
+    pub drivers: Option<Drivers>,
+}
+
+#[derive(Deserialize)]
+pub struct Drivers {
+    pub stocks: Vec<Option<f64>>,
+    pub production: Vec<Option<f64>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -17,6 +26,7 @@ pub struct Point {
     pub estimate: f64,
     pub lower: f64,
     pub upper: f64,
+    pub model: &'static str,
 }
 
 #[derive(Serialize, Debug)]
@@ -28,6 +38,9 @@ pub struct Metric {
     pub coverage: Option<f64>,
     pub samples: usize,
     pub coverage_samples: usize,
+    pub selected_model: &'static str,
+    pub validation_mae: f64,
+    pub validation_baseline_mae: f64,
 }
 
 #[derive(Serialize, Debug)]
@@ -39,6 +52,9 @@ pub struct Output {
     pub metrics: Vec<Metric>,
     pub minimum_training_months: usize,
     pub interval_level: f64,
+    pub validation_window_months: usize,
+    pub evaluation_months: usize,
+    pub driver_lag_months: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -104,126 +120,7 @@ fn quantile(values: &[f64], p: f64) -> f64 {
 }
 
 pub fn calculate(input: Input) -> Result<Output, String> {
-    let values = input.values;
-    if values.len() < 180 {
-        return Err("At least 180 complete monthly observations are required".into());
-    }
-    if !(36..=60).contains(&input.horizon) {
-        return Err("Horizon must be between 36 and 60 months".into());
-    }
-    if values
-        .iter()
-        .any(|v| !v.is_finite() || *v <= 0.0 || *v > 100_000.0)
-    {
-        return Err("Prices must be finite and positive".into());
-    }
-    let logs: Vec<f64> = values.iter().map(|v| v.ln()).collect();
-    let max_h = input.horizon;
-    // Each residual is a log ratio. These make the interval scale with prices.
-    let mut residuals = vec![vec![Vec::<f64>::new(); max_h]; 2];
-    let mut absolute_errors = vec![vec![Vec::<f64>::new(); max_h]; 2];
-    let mut hits = vec![vec![0usize; max_h]; 2];
-    let mut evaluated = vec![vec![0usize; max_h]; 2];
-    // Separate issued residuals from matured ones. At an origin, only residuals
-    // whose targets have already occurred may calibrate the next interval.
-    let mut pending: Vec<Vec<Vec<(usize, f64)>>> = vec![vec![Vec::new(); max_h]; 2];
-    for origin in MIN_TRAIN..values.len() {
-        let fitted = fit_at_origin(&logs, origin);
-        for h in 1..=max_h.min(values.len() - origin) {
-            let actual = values[origin + h - 1];
-            let candidates = [values[origin - 1], predict(fitted, h)];
-            for model in 0..2 {
-                let matured: Vec<f64> = pending[model][h - 1]
-                    .iter()
-                    .filter(|(target, _)| *target < origin)
-                    .map(|(_, error)| *error)
-                    .collect();
-                if matured.len() >= 24 {
-                    let lo = candidates[model] * quantile(&matured, 0.1).min(0.0).exp();
-                    let hi = candidates[model] * quantile(&matured, 0.9).max(0.0).exp();
-                    evaluated[model][h - 1] += 1;
-                    if actual >= lo && actual <= hi {
-                        hits[model][h - 1] += 1;
-                    }
-                }
-                let error = (actual / candidates[model]).ln();
-                pending[model][h - 1].push((origin + h - 1, error));
-                residuals[model][h - 1].push(error);
-                absolute_errors[model][h - 1].push((actual - candidates[model]).abs());
-            }
-        }
-    }
-    let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
-    let score = [3, 6, 12, 36]
-        .iter()
-        .map(|&h| {
-            let baseline = mean(&absolute_errors[0][h - 1]);
-            let candidate = mean(&absolute_errors[1][h - 1]);
-            if baseline < 1e-10 {
-                if candidate < 1e-10 {
-                    1.0
-                } else {
-                    f64::INFINITY
-                }
-            } else {
-                candidate / baseline
-            }
-        })
-        .sum::<f64>()
-        / 4.0;
-    let selected = usize::from(score < 1.0);
-    let fitted = fit(&logs);
-    let mut points = Vec::new();
-    for h in 1..=max_h {
-        let errors = &residuals[selected][h - 1];
-        if errors.len() < 24 {
-            return Err("Insufficient out-of-sample history for this horizon".into());
-        }
-        let estimate = if selected == 0 {
-            *values.last().unwrap()
-        } else {
-            predict(fitted, h)
-        };
-        // Include the central estimate even when the historical error is biased.
-        let lower = estimate * quantile(errors, 0.1).min(0.0).exp();
-        let upper = estimate * quantile(errors, 0.9).max(0.0).exp();
-        if ![estimate, lower, upper].iter().all(|v| v.is_finite()) {
-            return Err("Model produced a non-finite projection".into());
-        }
-        points.push(Point {
-            horizon: h,
-            estimate,
-            lower,
-            upper,
-        });
-    }
-    let metrics = [3, 6, 12, 36]
-        .iter()
-        .map(|&h| Metric {
-            horizon: h,
-            mae: mean(&absolute_errors[selected][h - 1]),
-            baseline_mae: mean(&absolute_errors[0][h - 1]),
-            coverage: if evaluated[selected][h - 1] == 0 {
-                None
-            } else {
-                Some(hits[selected][h - 1] as f64 / evaluated[selected][h - 1] as f64)
-            },
-            samples: absolute_errors[selected][h - 1].len(),
-            coverage_samples: evaluated[selected][h - 1],
-        })
-        .collect();
-    Ok(Output {
-        version: VERSION,
-        model: if selected == 0 {
-            "Last-observation baseline"
-        } else {
-            "Damped Holt trend (log price)"
-        },
-        points,
-        metrics,
-        minimum_training_months: MIN_TRAIN,
-        interval_level: 0.8,
-    })
+    adaptive::calculate(input)
 }
 
 #[wasm_bindgen]
@@ -241,6 +138,7 @@ mod tests {
         let output = calculate(Input {
             values: vec![70.0; 240],
             horizon: 36,
+            drivers: None,
         })
         .unwrap();
         assert_eq!(output.model, "Last-observation baseline");
@@ -253,14 +151,16 @@ mod tests {
     fn rejects_bad_data() {
         assert!(calculate(Input {
             values: vec![70.0; 120],
-            horizon: 36
+            horizon: 36,
+            drivers: None
         })
         .is_err());
         let mut values = vec![70.0; 240];
         values[12] = f64::NAN;
         assert!(calculate(Input {
             values,
-            horizon: 36
+            horizon: 36,
+            drivers: None
         })
         .is_err());
     }
@@ -272,6 +172,7 @@ mod tests {
         let output = calculate(Input {
             values,
             horizon: 40,
+            drivers: None,
         })
         .unwrap();
         assert_eq!(output.points.len(), 40);
@@ -283,6 +184,11 @@ mod tests {
             .metrics
             .iter()
             .all(|m| m.mae.is_finite() && m.samples > 0));
+        assert!(output
+            .points
+            .windows(2)
+            .any(|pair| (pair[1].estimate - pair[0].estimate).abs() > 0.01));
+        assert!(output.metrics.iter().all(|m| m.samples <= 60));
     }
     #[test]
     fn fit_never_reads_future() {
