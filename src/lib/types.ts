@@ -1,5 +1,5 @@
 export const COIN = "xyz:BRENTOIL";
-export const HORIZONS = [3, 6, 12, 36] as const;
+export const HORIZONS = [3, 6, 12, 36, 60, 120, 180, 360] as const;
 export type Horizon = (typeof HORIZONS)[number];
 export type Freshness = "fresh" | "stale";
 export type Connection = "connecting" | "live" | "reconnecting" | "stale";
@@ -42,6 +42,22 @@ export interface Projection {
   lower: number;
   upper: number;
   model?: string;
+  scenario?: boolean;
+  endMonth?: string;
+}
+export interface Scenarios {
+  startMonth: string;
+  anchorMonth: string;
+  anchor: number;
+  assumptions: { inflation: number; realGrowth: number[] };
+  monthly: Projection[];
+  annual: Projection[];
+}
+export interface DailySummary {
+  month: string;
+  lastDate: string;
+  close: number;
+  volatility: number;
 }
 export interface DriverValues {
   stocks: (number | null)[];
@@ -58,6 +74,10 @@ export interface Metric {
   horizon: number;
   mae: number;
   baselineMae: number;
+  rmse?: number;
+  baselineRmse?: number;
+  directionAccuracy?: number;
+  meanIntervalWidth?: number | null;
   coverage: number | null;
   samples: number;
   coverageSamples: number;
@@ -86,6 +106,8 @@ export interface Outlook {
   lastObservation: string;
   observations: Observation[];
   drivers?: DriverSeries[];
+  daily?: DailySummary[];
+  scenarios?: Scenarios;
   projections: Projection[];
   model: Omit<ModelResult, "points">;
   performance: { initializationMs: number; computationMs: number };

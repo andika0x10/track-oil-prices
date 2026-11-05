@@ -1,0 +1,340 @@
+{
+  "provenance": {
+    "source": "EIA revised observations; assumed two-month fundamental lag",
+    "fetchedAt": "2026-11-05T15:03:42.942Z",
+    "firstMonth": "1987-05",
+    "lastMonth": "2026-10"
+  },
+  "computationMs": 342.2031,
+  "experiments": [
+    {
+      "currentEstimate": 110.81623648198652,
+      "elasticPenalty": 0.01,
+      "horizon": 3,
+      "inverseMseWeights": [
+        0.1981746060798105,
+        0.1981746060798105,
+        0.2132441081680625,
+        0.20406359611307395,
+        0.18634308355924256
+      ],
+      "productionModel": "legacy",
+      "promotionPassed": false,
+      "ridgePenalty": 1,
+      "scores": [
+        {
+          "coverage": 0.85,
+          "directionAccuracy": 0.08333333333333333,
+          "mae": 11.150329243776886,
+          "meanIntervalWidth": 35.46563772432278,
+          "model": "legacy",
+          "rmse": 16.154310792822315,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8166666666666667,
+          "directionAccuracy": 0,
+          "mae": 11.546500000000002,
+          "meanIntervalWidth": 35.69206222015798,
+          "model": "monthly-no-change",
+          "rmse": 16.53686563409161,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8166666666666667,
+          "directionAccuracy": 0.5333333333333333,
+          "mae": 11.875333333333336,
+          "meanIntervalWidth": 37.24929032331561,
+          "model": "daily-close-no-change",
+          "rmse": 17.31803857254048,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8,
+          "directionAccuracy": 0.6,
+          "mae": 11.775419078963463,
+          "meanIntervalWidth": 35.803192227397325,
+          "model": "tuned-ridge",
+          "rmse": 16.97704668598087,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8,
+          "directionAccuracy": 0.55,
+          "mae": 12.422198223082422,
+          "meanIntervalWidth": 35.9409248457289,
+          "model": "tuned-elastic",
+          "rmse": 18.921436327952495,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8166666666666667,
+          "directionAccuracy": 0.5833333333333334,
+          "mae": 11.670503586105896,
+          "meanIntervalWidth": 37.39826987752024,
+          "model": "equal-ensemble",
+          "rmse": 16.831618957031793,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8166666666666667,
+          "directionAccuracy": 0.5833333333333334,
+          "mae": 11.668487187088171,
+          "meanIntervalWidth": 37.416123958962835,
+          "model": "inverse-mse-ensemble",
+          "rmse": 16.817576293040005,
+          "samples": 60
+        }
+      ],
+      "selectedBeforeHoldout": "daily-close-no-change",
+      "tuningFrozenAtOrigin": 412
+    },
+    {
+      "currentEstimate": 101.7022514323878,
+      "elasticPenalty": 0.01,
+      "horizon": 6,
+      "inverseMseWeights": [
+        0.20968222146877782,
+        0.20968222146877782,
+        0.2126522745345352,
+        0.20483758740208022,
+        0.16314569512582877
+      ],
+      "productionModel": "legacy",
+      "promotionPassed": false,
+      "ridgePenalty": 1,
+      "scores": [
+        {
+          "coverage": 0.8666666666666667,
+          "directionAccuracy": 0.45,
+          "mae": 13.880431934189767,
+          "meanIntervalWidth": 52.740433240152804,
+          "model": "legacy",
+          "rmse": 19.088843700889147,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8666666666666667,
+          "directionAccuracy": 0,
+          "mae": 13.387833333333328,
+          "meanIntervalWidth": 55.34426348890137,
+          "model": "monthly-no-change",
+          "rmse": 18.631159250030578,
+          "samples": 60
+        },
+        {
+          "coverage": 0.85,
+          "directionAccuracy": 0.6833333333333333,
+          "mae": 13.114499999999996,
+          "meanIntervalWidth": 52.28920721328583,
+          "model": "daily-close-no-change",
+          "rmse": 18.363513235035754,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8166666666666667,
+          "directionAccuracy": 0.45,
+          "mae": 13.493697715617595,
+          "meanIntervalWidth": 51.86688810149863,
+          "model": "tuned-ridge",
+          "rmse": 18.845564867007926,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8166666666666667,
+          "directionAccuracy": 0.43333333333333335,
+          "mae": 13.699464211713222,
+          "meanIntervalWidth": 53.78532896004124,
+          "model": "tuned-elastic",
+          "rmse": 18.897355051579144,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8333333333333334,
+          "directionAccuracy": 0.5833333333333334,
+          "mae": 13.009130456412528,
+          "meanIntervalWidth": 49.8161730233332,
+          "model": "equal-ensemble",
+          "rmse": 18.403790012565167,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8333333333333334,
+          "directionAccuracy": 0.6166666666666667,
+          "mae": 12.99484079107021,
+          "meanIntervalWidth": 50.351325628219875,
+          "model": "inverse-mse-ensemble",
+          "rmse": 18.392388928032886,
+          "samples": 60
+        }
+      ],
+      "selectedBeforeHoldout": "tuned-ridge",
+      "tuningFrozenAtOrigin": 409
+    },
+    {
+      "currentEstimate": 90.52769688187551,
+      "elasticPenalty": 0.1,
+      "horizon": 12,
+      "inverseMseWeights": [
+        0.22070053490956637,
+        0.22070053490956637,
+        0.22842132722445949,
+        0.1812411998570183,
+        0.14893640309938952
+      ],
+      "productionModel": "legacy",
+      "promotionPassed": false,
+      "ridgePenalty": 1,
+      "scores": [
+        {
+          "coverage": 0.7666666666666667,
+          "directionAccuracy": 0.4166666666666667,
+          "mae": 17.129075717135265,
+          "meanIntervalWidth": 76.33054459243411,
+          "model": "legacy",
+          "rmse": 23.757064944225213,
+          "samples": 60
+        },
+        {
+          "coverage": 0.7666666666666667,
+          "directionAccuracy": 0,
+          "mae": 19.510166666666667,
+          "meanIntervalWidth": 83.61559729533062,
+          "model": "monthly-no-change",
+          "rmse": 25.04066882094007,
+          "samples": 60
+        },
+        {
+          "coverage": 0.7833333333333333,
+          "directionAccuracy": 0.5833333333333334,
+          "mae": 19.286500000000004,
+          "meanIntervalWidth": 78.67674485506132,
+          "model": "daily-close-no-change",
+          "rmse": 24.783235025584,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8333333333333334,
+          "directionAccuracy": 0.5666666666666667,
+          "mae": 17.796737867875688,
+          "meanIntervalWidth": 72.33363781304712,
+          "model": "tuned-ridge",
+          "rmse": 22.741198080946997,
+          "samples": 60
+        },
+        {
+          "coverage": 0.8333333333333334,
+          "directionAccuracy": 0.5333333333333333,
+          "mae": 18.22089754870179,
+          "meanIntervalWidth": 73.24455813939511,
+          "model": "tuned-elastic",
+          "rmse": 23.568001358961123,
+          "samples": 60
+        },
+        {
+          "coverage": 0.7833333333333333,
+          "directionAccuracy": 0.7333333333333333,
+          "mae": 17.918001585674777,
+          "meanIntervalWidth": 74.57351894454659,
+          "model": "equal-ensemble",
+          "rmse": 23.315180141319825,
+          "samples": 60
+        },
+        {
+          "coverage": 0.7833333333333333,
+          "directionAccuracy": 0.75,
+          "mae": 17.929048210146224,
+          "meanIntervalWidth": 74.25360834690937,
+          "model": "inverse-mse-ensemble",
+          "rmse": 23.40249739798768,
+          "samples": 60
+        }
+      ],
+      "selectedBeforeHoldout": "daily-close-no-change",
+      "tuningFrozenAtOrigin": 403
+    },
+    {
+      "currentEstimate": 78.17938786482961,
+      "elasticPenalty": 0.1,
+      "horizon": 36,
+      "inverseMseWeights": [
+        0.20020434079420507,
+        0.2729102074416937,
+        0.2734697313288444,
+        0.11764008119679782,
+        0.13577563923845895
+      ],
+      "productionModel": "legacy",
+      "promotionPassed": false,
+      "ridgePenalty": 1,
+      "scores": [
+        {
+          "coverage": 0.75,
+          "directionAccuracy": 0.6333333333333333,
+          "mae": 22.875771644885262,
+          "meanIntervalWidth": 69.92201554515698,
+          "model": "legacy",
+          "rmse": 28.089568151512818,
+          "samples": 60
+        },
+        {
+          "coverage": 0.7833333333333333,
+          "directionAccuracy": 0,
+          "mae": 27.956333333333355,
+          "meanIntervalWidth": 86.4586044946422,
+          "model": "monthly-no-change",
+          "rmse": 31.96435102839829,
+          "samples": 60
+        },
+        {
+          "coverage": 0.7833333333333333,
+          "directionAccuracy": 0.5666666666666667,
+          "mae": 28.39666666666668,
+          "meanIntervalWidth": 86.38740944885915,
+          "model": "daily-close-no-change",
+          "rmse": 32.64343154959866,
+          "samples": 60
+        },
+        {
+          "coverage": 0.55,
+          "directionAccuracy": 0.5,
+          "mae": 31.886211503018544,
+          "meanIntervalWidth": 74.29807034035112,
+          "model": "tuned-ridge",
+          "rmse": 51.499590676148834,
+          "samples": 60
+        },
+        {
+          "coverage": 0.5833333333333334,
+          "directionAccuracy": 0.45,
+          "mae": 55.15932588764703,
+          "meanIntervalWidth": 93.08052059191121,
+          "model": "tuned-elastic",
+          "rmse": 168.32810603298293,
+          "samples": 60
+        },
+        {
+          "coverage": 0.5833333333333334,
+          "directionAccuracy": 0.5,
+          "mae": 29.951030787424283,
+          "meanIntervalWidth": 75.14894381287144,
+          "model": "equal-ensemble",
+          "rmse": 46.0107209434849,
+          "samples": 60
+        },
+        {
+          "coverage": 0.5666666666666667,
+          "directionAccuracy": 0.5333333333333333,
+          "mae": 27.94981083940976,
+          "meanIntervalWidth": 73.13233678823404,
+          "model": "inverse-mse-ensemble",
+          "rmse": 35.738781402912785,
+          "samples": 60
+        }
+      ],
+      "selectedBeforeHoldout": "daily-close-no-change",
+      "tuningFrozenAtOrigin": 379
+    }
+  ],
+  "protocol": "frozen tuning before first holdout origin; 60 matched target months; pseudo-real-time revised data"
+}

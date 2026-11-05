@@ -20,6 +20,8 @@ struct ErrorRecord {
     absolute: f64,
     log_ratio: f64,
     covered: Option<bool>,
+    direction_correct: bool,
+    interval_width: Option<f64>,
 }
 
 // Two-month publication lag. Only values available by this origin are read.
@@ -191,6 +193,10 @@ fn interval(errors: &[ErrorRecord], origin: usize, estimate: f64) -> Option<(f64
 }
 
 pub(super) fn calculate(input: Input) -> Result<Output, String> {
+    calculate_audit(input, false)
+}
+
+pub(super) fn calculate_audit(input: Input, capture: bool) -> Result<Output, String> {
     let values = &input.values;
     let n = values.len();
     let max_h = input.horizon;
@@ -242,6 +248,7 @@ pub(super) fn calculate(input: Input) -> Result<Output, String> {
     let mut policy = vec![Vec::<ErrorRecord>::new(); max_h];
     let mut points = Vec::new();
     let mut selected_models = Vec::new();
+    let mut audit = Vec::new();
     for origin in MIN_TRAIN..=n {
         let trend = fit_at_origin(&logs, origin);
         let (equilibrium, phi) = mean_reversion(&logs, origin);
@@ -267,6 +274,13 @@ pub(super) fn calculate(input: Input) -> Result<Output, String> {
             .map(|value| value.filter(|v| v.is_finite() && *v > 0.0));
             let selected = select(&records[h - 1], &candidates, origin);
             let estimate = candidates[selected].unwrap_or(last);
+            if capture {
+                audit.push(super::AuditForecast {
+                    origin,
+                    horizon: h,
+                    estimate,
+                });
+            }
             let bounds = interval(&policy[h - 1], origin, estimate);
             if origin == n {
                 let (lower, upper) =
@@ -290,6 +304,9 @@ pub(super) fn calculate(input: Input) -> Result<Output, String> {
                     absolute: (actual - estimate).abs(),
                     log_ratio: (actual / estimate).ln(),
                     covered: bounds.map(|(lo, hi)| actual >= lo && actual <= hi),
+                    direction_correct: super::direction(actual - last)
+                        == super::direction(estimate - last),
+                    interval_width: bounds.map(|(lo, hi)| hi - lo),
                 });
                 for model in 0..NAMES.len() {
                     if let Some(price) = candidates[model] {
@@ -298,6 +315,8 @@ pub(super) fn calculate(input: Input) -> Result<Output, String> {
                             absolute: (actual - price).abs(),
                             log_ratio: (actual / price).ln(),
                             covered: None,
+                            direction_correct: false,
+                            interval_width: None,
                         });
                     }
                 }
@@ -322,6 +341,16 @@ pub(super) fn calculate(input: Input) -> Result<Output, String> {
             horizon: h,
             mae: recent.iter().map(|e| e.absolute).sum::<f64>() / recent.len() as f64,
             baseline_mae: baseline.iter().map(|e| e.absolute).sum::<f64>() / baseline.len() as f64,
+            rmse: (recent.iter().map(|e| e.absolute.powi(2)).sum::<f64>() / recent.len() as f64)
+                .sqrt(),
+            baseline_rmse: (baseline.iter().map(|e| e.absolute.powi(2)).sum::<f64>()
+                / baseline.len() as f64)
+                .sqrt(),
+            direction_accuracy: recent.iter().filter(|e| e.direction_correct).count() as f64
+                / recent.len() as f64,
+            mean_interval_width: (!covered.is_empty()).then(|| {
+                recent.iter().filter_map(|e| e.interval_width).sum::<f64>() / covered.len() as f64
+            }),
             coverage: (!covered.is_empty())
                 .then(|| covered.iter().filter(|&&v| v).count() as f64 / covered.len() as f64),
             samples: recent.len(),
@@ -345,6 +374,7 @@ pub(super) fn calculate(input: Input) -> Result<Output, String> {
         validation_window_months: VALIDATION,
         evaluation_months: EVALUATION,
         driver_lag_months: if input.drivers.is_some() { 2 } else { 0 },
+        audit,
     })
 }
 
@@ -359,6 +389,8 @@ mod tests {
                 absolute: 10.0,
                 log_ratio: 0.0,
                 covered: None,
+                direction_correct: false,
+                interval_width: None,
             })
             .collect();
         let challenger: Vec<_> = baseline

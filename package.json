@@ -6,6 +6,8 @@
     "node": ">=22.23.4"
   },
   "scripts": {
+    "benchmark": "node scripts/benchmark.mjs",
+    "profile:model": "node scripts/profile-model.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "build:wasm": "node scripts/build-wasm.mjs",

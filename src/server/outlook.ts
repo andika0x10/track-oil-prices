@@ -11,6 +11,8 @@ import type {
   Outlook,
 } from "../lib/types";
 import { ServiceError, upstreamJson } from "./http";
+import { createScenarios } from "./scenarios";
+import { fetchDaily } from "./daily";
 import type { runModel } from "./model";
 
 export interface OutlookEnv {
@@ -28,7 +30,7 @@ export function createOutlookService(
     return runModel(values, horizon, drivers);
   },
 ) {
-  const CACHE_KEY = "brent-outlook:0.2.0";
+  const CACHE_KEY = "brent-outlook:0.3.0";
   let memory: Outlook | undefined;
   let pending: Promise<Outlook> | undefined;
 
@@ -133,13 +135,20 @@ export function createOutlookService(
       stocks: aligned(drivers[0].observations),
       production: aligned(drivers[1].observations),
     };
+    // Research inputs are optional: unavailable daily data must not disable the monthly engine.
+    const daily = await fetchDaily(env.EIA_API_KEY).catch(() => {
+      console.warn(JSON.stringify({ event: "daily_benchmark_unavailable" }));
+      return [];
+    });
     const now = new Date().toISOString();
     const targetMonth = addMonths(currentMonth(), 36);
     if (
       cached &&
       cached.projections.at(-1)!.month >= targetMonth &&
       JSON.stringify(cached.observations) === JSON.stringify(observations) &&
-      JSON.stringify(cached.drivers) === JSON.stringify(drivers)
+      JSON.stringify(cached.drivers) === JSON.stringify(drivers) &&
+      JSON.stringify(cached.daily) === JSON.stringify(daily) &&
+      cached.scenarios?.startMonth === addMonths(currentMonth(), 1)
     ) {
       const checked: Outlook = {
         ...cached,
@@ -179,6 +188,7 @@ export function createOutlookService(
       lastObservation,
       observations,
       drivers,
+      daily,
       model,
       performance: computed.performance,
       projections: points.map((point) => ({
@@ -186,6 +196,10 @@ export function createOutlookService(
         month: addMonths(lastObservation, point.horizon),
       })),
     };
+    result.scenarios = createScenarios(
+      result.projections,
+      addMonths(currentMonth(), 1),
+    );
     await writeCache(env, result);
     console.info(
       JSON.stringify({
@@ -201,6 +215,7 @@ export function createOutlookService(
     if (
       !force &&
       cached &&
+      cached.scenarios?.startMonth === addMonths(currentMonth(), 1) &&
       Date.now() - Date.parse(cached.checkedAt) < 86400_000
     )
       return cached;

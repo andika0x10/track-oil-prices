@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { SplitText } from "gsap/SplitText";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Flip } from "gsap/Flip";
 import PriceChart, { type ChartPoint } from "./PriceChart";
 import { api, useMarket } from "../hooks/useMarket";
 import {
@@ -9,8 +12,9 @@ import {
   type Outlook,
   type Projection,
 } from "../lib/types";
-import { upcomingMonths, visibleProjections } from "../lib/data";
-gsap.registerPlugin(useGSAP);
+import { upcomingMonths } from "../lib/data";
+import { outlookPeriods } from "../lib/scenarios";
+gsap.registerPlugin(useGSAP, SplitText, ScrollTrigger, Flip);
 const money = (v?: number) =>
   v === undefined
     ? "—"
@@ -33,8 +37,7 @@ const dateTime = (d: string) =>
     minute: "2-digit",
     timeZoneName: "short",
   }).format(new Date(d));
-const horizonLabel = (h: number) =>
-  h === 12 ? "1Y" : h === 36 ? "3Y" : `${h}M`;
+const horizonLabel = (h: number) => (h >= 12 ? `${h / 12}Y` : `${h}M`);
 function Icon({
   name,
   size = 18,
@@ -152,7 +155,7 @@ function MonthDetail({
       if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches)
         gsap.from(".detail-content", {
           y: 32,
-          opacity: 0,
+          autoAlpha: 0,
           duration: 0.35,
           ease: "power3.out",
         });
@@ -165,8 +168,9 @@ function MonthDetail({
     else
       gsap.to(".detail-content", {
         y: 16,
-        opacity: 0,
+        autoAlpha: 0,
         duration: 0.18,
+        overwrite: "auto",
         onComplete: onClose,
       });
   });
@@ -196,9 +200,16 @@ function MonthDetail({
             <Icon name="close" />
           </button>
         </div>
-        <h2 id="month-title">{fullMonth(month)}</h2>
+        <h2 id="month-title">
+          {point?.endMonth
+            ? `${fullMonth(month)} – ${fullMonth(point.endMonth)}`
+            : fullMonth(month)}
+        </h2>
         <div className="detail-price">{money(point?.estimate)}</div>
-        <p className="muted">Estimated monthly average · USD per barrel</p>
+        <p className="muted">
+          {point?.endMonth ? "Annual average" : "Monthly average"} · nominal USD
+          per barrel{point?.scenario ? " · Base scenario" : ""}
+        </p>
         {point ? (
           <>
             <div className="range-track">
@@ -206,19 +217,35 @@ function MonthDetail({
             </div>
             <div className="range-endpoints">
               <div>
-                <span>Lower projection</span>
+                <span>
+                  {point.scenario ? "Low scenario" : "Lower projection"}
+                </span>
                 <strong>{money(point.lower)}</strong>
               </div>
               <div>
-                <span>Upper projection</span>
+                <span>
+                  {point.scenario ? "High scenario" : "Upper projection"}
+                </span>
                 <strong>{money(point.upper)}</strong>
               </div>
             </div>
             <p className="detail-note">
-              An 80% prediction interval, calibrated against historical forecast
-              errors. Actual prices may fall outside this range.
+              {point.scenario
+                ? "Assumption-based scenarios, not a prediction interval. USD inflation: 2% annually. Real price growth: low −2%, base 0%, high +2%. All paths compound monthly from the month-36 estimate."
+                : point.endMonth
+                  ? "Annual averages of monthly estimates and interval endpoints. These bounds are not a calibrated annual 80% interval."
+                  : "An 80% prediction interval, calibrated against historical forecast errors. Actual prices may fall outside this range."}
             </p>
             <dl className="detail-meta">
+              {point.scenario && outlook?.scenarios && (
+                <div>
+                  <dt>Scenario anchor</dt>
+                  <dd>
+                    {money(outlook.scenarios.anchor)} ·{" "}
+                    {fullMonth(outlook.scenarios.anchorMonth)}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Model</dt>
                 <dd>{point.model || outlook?.model.model}</dd>
@@ -308,16 +335,35 @@ export default function Dashboard() {
       mm.add(
         "(prefers-reduced-motion: no-preference)",
         () => {
+          const split = SplitText.create("#market-title", {
+            type: "words",
+            mask: "words",
+          });
+          const mobile = window.matchMedia("(max-width: 767px)").matches;
           gsap
             .timeline({ defaults: { ease: "power3.out" } })
-            .from(".site-header", { y: -12, opacity: 0, duration: 0.6 })
+            .from(".site-header", { y: -12, autoAlpha: 0, duration: 0.45 }, 0)
             .from(
-              ".market-heading",
-              { y: 18, opacity: 0, duration: 0.65 },
-              "-=.3",
+              split.words,
+              {
+                yPercent: 105,
+                rotation: mobile ? 0 : 3,
+                stagger: 0.085,
+                duration: 0.7,
+              },
+              0.15,
             )
-            .from(".price-row", { y: 22, opacity: 0, duration: 0.75 }, "-=.45")
-            .from(".market-bottom", { opacity: 0, duration: 0.5 }, "-=.3");
+            .from(
+              ".instrument-line, .market-heading .section-description",
+              { autoAlpha: 0, y: 8, stagger: 0.1, duration: 0.5 },
+              0.4,
+            )
+            .from(
+              ".price-row",
+              { y: mobile ? 12 : 26, autoAlpha: 0, duration: 0.7 },
+              0.6,
+            )
+            .from(".market-bottom", { autoAlpha: 0, duration: 0.4 }, 1.1);
         },
         root,
       );
@@ -326,16 +372,71 @@ export default function Dashboard() {
     { scope: root },
   );
   const { contextSafe } = useGSAP({ scope: root });
+  const indicatorState = useRef<ReturnType<typeof Flip.getState> | null>(null);
   const chooseHorizon = contextSafe((value: Horizon) => {
+    if (value === horizon) return;
+    indicatorState.current = Flip.getState(
+      root.current!.querySelectorAll(".horizon-indicator"),
+    );
+    setSelectedMonth(undefined);
     setHorizon(value);
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-      gsap.fromTo(
-        ".calendar-grid",
-        { opacity: 0.4, y: 7 },
-        { opacity: 1, y: 0, duration: 0.3, overwrite: "auto" },
-      );
   });
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add(
+        "(prefers-reduced-motion: no-preference)",
+        () => {
+          if (indicatorState.current)
+            Flip.from(indicatorState.current, {
+              duration: 0.3,
+              ease: "power3.inOut",
+              prune: true,
+            });
+          gsap.fromTo(
+            ".calendar-grid",
+            { autoAlpha: 0.4, y: 8 },
+            { autoAlpha: 1, y: 0, duration: 0.3, overwrite: "auto" },
+          );
+          for (const group of gsap.utils.toArray<HTMLElement>(
+            ".calendar-year",
+            root.current!,
+          )) {
+            gsap.from(group.querySelectorAll(".month-cell"), {
+              opacity: 0,
+              y: 12,
+              duration: 0.3,
+              stagger: { amount: 0.15 },
+              scrollTrigger: { trigger: group, start: "top 95%", once: true },
+            });
+          }
+          ScrollTrigger.refresh();
+        },
+        root,
+      );
+      return () => mm.revert();
+    },
+    {
+      scope: root,
+      dependencies: [horizon, outlookLoading],
+      revertOnUpdate: true,
+    },
+  );
   const openMonth = useCallback((month: string) => setSelectedMonth(month), []);
+  const toggleMethod = contextSafe(() => {
+    if (
+      methodOpen &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      gsap.to(".method-body", {
+        autoAlpha: 0,
+        y: -8,
+        duration: 0.18,
+        overwrite: "auto",
+        onComplete: () => setMethodOpen(false),
+      });
+    } else setMethodOpen((v) => !v);
+  });
   useGSAP(
     () => {
       if (
@@ -347,15 +448,18 @@ export default function Dashboard() {
     { scope: root, dependencies: [methodOpen], revertOnUpdate: true },
   );
   const months = now ? upcomingMonths(horizon, now) : [];
+  const annual = horizon >= 180;
   const visible = useMemo(
-    () =>
-      outlook && now
-        ? visibleProjections(outlook.projections, horizon, now)
-        : [],
+    () => (outlook && now ? outlookPeriods(outlook, horizon, now) : []),
     [outlook, horizon, now],
   );
   const forecastByMonth = new Map(visible.map((p) => [p.month, p]));
-  const years = [...new Set(months.map((m) => m.slice(0, 4)))];
+  const calendarMonths = annual
+    ? now
+      ? Array.from({ length: horizon / 12 }, (_, i) => months[i * 12])
+      : []
+    : months;
+  const years = [...new Set(calendarMonths.map((m) => m.slice(0, 4)))];
   const livePoints: ChartPoint[] =
     history?.candles.map((c) => ({ time: c.time, value: c.close })) || [];
   const outlookPoints = useMemo<ChartPoint[]>(
@@ -368,20 +472,16 @@ export default function Dashboard() {
               value: r.value,
               month: r.month,
             })),
-            ...outlook.projections
-              .filter(
-                (p) =>
-                  visible.some((v) => v.month === p.month) ||
-                  (now && p.month <= now.toISOString().slice(0, 7)),
-              )
-              .map((p) => ({
-                time: Date.parse(`${p.month}-01T00:00:00Z`),
-                value: p.estimate,
-                lower: p.lower,
-                upper: p.upper,
-                forecast: true,
-                month: p.month,
-              })),
+            ...visible.map((p) => ({
+              time: Date.parse(`${p.endMonth ?? p.month}-01T00:00:00Z`),
+              value: p.estimate,
+              lower: p.lower,
+              upper: p.upper,
+              forecast: true,
+              month: p.month,
+              scenario: p.scenario,
+              endMonth: p.endMonth,
+            })),
           ],
     [outlook, visible, now],
   );
@@ -574,9 +674,13 @@ export default function Dashboard() {
               <div className="section-kicker">
                 <span className="blue-line" /> Brent benchmark outlook
               </div>
-              <h2 id="outlook-title">The months ahead.</h2>
+              <h2 id="outlook-title">
+                {annual ? "The years ahead." : "The months ahead."}
+              </h2>
               <p className="section-description">
-                A longer perspective. One month at a time.
+                {annual
+                  ? "A longer perspective. One year at a time."
+                  : "A longer perspective. One month at a time."}
               </p>
             </div>
             <div
@@ -589,9 +693,20 @@ export default function Dashboard() {
                   key={v}
                   aria-pressed={horizon === v}
                   onClick={() => chooseHorizon(v)}
-                  aria-label={`${v} month projection`}
+                  aria-label={
+                    v >= 180
+                      ? `${v / 12} year scenario`
+                      : `${v} month projection`
+                  }
                 >
-                  {horizonLabel(v)}
+                  {horizon === v && (
+                    <span
+                      className="horizon-indicator"
+                      data-flip-id="horizon-active"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="horizon-label">{horizonLabel(v)}</span>
                 </button>
               ))}
             </div>
@@ -599,9 +714,11 @@ export default function Dashboard() {
           <div className="outlook-chart-wrap" aria-busy={outlookLoading}>
             <div className="outlook-chart-header">
               <span>
-                {horizon === 36
-                  ? "Long-term projection"
-                  : "Monthly price projection"}
+                {horizon > 36
+                  ? `${annual ? "Annual" : "Monthly"} outlook & scenarios`
+                  : horizon === 36
+                    ? "Long-term projection"
+                    : "Monthly price projection"}
               </span>
               <div className="chart-legend">
                 <span>
@@ -614,17 +731,18 @@ export default function Dashboard() {
                 </span>
                 <span>
                   <i className="legend-range" />
-                  80% range
+                  {horizon > 36 ? "Interval / scenario range" : "80% range"}
                 </span>
               </div>
             </div>
             <PriceChart
               points={outlookPoints}
-              label="Monthly Brent benchmark history and price projections with an 80 percent prediction interval"
+              label={`${annual ? "Annual" : "Monthly"} Brent benchmark outlook${horizon > 36 ? " and assumption-based scenarios" : " with an 80 percent prediction interval"}`}
               animationKey={`outlook-${horizon}`}
               selectedMonth={selectedMonth}
               onSelectMonth={openMonth}
               monthly
+              annual={annual}
             />
             {!outlook && (
               <div className="chart-empty outlook-empty">
@@ -680,18 +798,25 @@ export default function Dashboard() {
           <div className="outlook-explainer">
             <span className="info-dot">i</span>
             <p>
+              {horizon > 36
+                ? "After month 36: low, base and high scenarios assume 2% annual USD inflation and −2%, 0%, +2% real price growth. These are assumptions, not probability bounds. Prices are nominal USD/barrel. "
+                : ""}
               Projections follow the Brent benchmark, not the Hyperliquid
-              contract. The shaded range reflects historical forecast
-              uncertainty; actual prices can fall outside it.
+              contract.{" "}
+              {annual
+                ? "The first three annual ranges average monthly interval endpoints; they are not calibrated annual intervals."
+                : "For the first 36 months, shading shows the historical 80% prediction interval; actual prices can fall outside it."}
             </p>
           </div>
           <div className="calendar-heading flex items-center justify-between gap-3">
-            <h3>Month by month</h3>
-            <span className="muted">{horizon} months ahead</span>
+            <h3>{annual ? "Year by year" : "Month by month"}</h3>
+            <span className="muted">
+              {annual ? `${horizon / 12} years` : `${horizon} months`} ahead
+            </span>
           </div>
           <div
             className="calendar-grid"
-            aria-label="Monthly projection calendar"
+            aria-label={`${annual ? "Annual" : "Monthly"} projection calendar`}
           >
             {years.map((year) => (
               <div className="calendar-year" key={year}>
@@ -700,7 +825,7 @@ export default function Dashboard() {
                   <span />
                 </div>
                 <div className="month-grid">
-                  {months
+                  {calendarMonths
                     .filter((m) => m.startsWith(year))
                     .map((month) => {
                       const point = forecastByMonth.get(month);
@@ -713,12 +838,21 @@ export default function Dashboard() {
                           aria-haspopup="dialog"
                         >
                           <div className="month-cell-top">
-                            <span>{monthName(month)}</span>
+                            <span>
+                              {annual
+                                ? `${fullMonth(month)} – ${fullMonth(months[months.indexOf(month) + 11])}`
+                                : monthName(month)}
+                            </span>
                             <span className="month-open">
                               <Icon name="plus" size={14} />
                             </span>
                           </div>
                           <strong>{money(point?.estimate)}</strong>
+                          {point?.scenario && (
+                            <span className="scenario-label">
+                              Base scenario
+                            </span>
+                          )}
                           <span className="month-range">
                             {point
                               ? `${money(point.lower)} – ${money(point.upper)}`
@@ -739,7 +873,9 @@ export default function Dashboard() {
           <div className="calendar-footnote">
             <span>
               <span className="tiny-blue-dot" />
-              Monthly averages, not end-of-month targets
+              {annual
+                ? "Annual averages over consecutive 12-month periods"
+                : "Monthly averages, not end-of-month targets"}
             </span>
             <span>
               {outlook
@@ -762,7 +898,7 @@ export default function Dashboard() {
               className="method-toggle"
               aria-expanded={methodOpen}
               aria-controls="method-body"
-              onClick={() => setMethodOpen((v) => !v)}
+              onClick={toggleMethod}
             >
               {methodOpen ? "Hide methodology" : "How it works"}
               <span
@@ -824,6 +960,9 @@ export default function Dashboard() {
                           <th>Current model</th>
                           <th>Model MAE</th>
                           <th>Baseline MAE</th>
+                          <th>RMSE</th>
+                          <th>Direction accuracy</th>
+                          <th>Mean range width</th>
                           <th>Range coverage</th>
                           <th>Tests / coverage tests</th>
                         </tr>
@@ -835,6 +974,13 @@ export default function Dashboard() {
                             <td>{m.selectedModel || outlook.model.model}</td>
                             <td>{money(m.mae)}</td>
                             <td>{money(m.baselineMae)}</td>
+                            <td>{money(m.rmse)}</td>
+                            <td>
+                              {m.directionAccuracy === undefined
+                                ? "—"
+                                : `${(m.directionAccuracy * 100).toFixed(1)}%`}
+                            </td>
+                            <td>{money(m.meanIntervalWidth ?? undefined)}</td>
                             <td>
                               {m.coverage === null
                                 ? "Not enough tests"
@@ -856,7 +1002,10 @@ export default function Dashboard() {
                     only then-known errors, not the outcomes being evaluated.
                     Current selections can differ from historical ones. Coverage
                     also uses only previously matured errors. Horizons are
-                    measured from the last observed month.
+                    measured from the last observed month. RMSE penalizes large
+                    misses; direction accuracy counts correct up/down/unchanged
+                    forecasts. Annual scenario ranges are not calibrated
+                    prediction intervals.
                   </p>
                   {outlook.drivers && (
                     <p className="method-small">

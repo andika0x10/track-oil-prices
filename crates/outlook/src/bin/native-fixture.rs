@@ -1,4 +1,20 @@
 fn main() {
+    if std::env::args().any(|arg| arg == "--scenarios") {
+        let points = (1..=36)
+            .map(|horizon| brent_outlook::scenarios::ScenarioPoint {
+                horizon,
+                estimate: 80.0,
+                lower: 60.0,
+                upper: 100.0,
+                scenario: false,
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string(&brent_outlook::scenarios::calculate(points).unwrap()).unwrap()
+        );
+        return;
+    }
     let values = (0..240)
         .map(|i| 65.0 + (i as f64 / 9.0).sin() * 15.0 + i as f64 * 0.02)
         .collect();

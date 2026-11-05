@@ -1,11 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export function forecast(json: string): string;
+export function build_scenarios(json: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly build_scenarios: (a: number, b: number) => [number, number, number, number];
   readonly forecast: (a: number, b: number) => [number, number, number, number];
   readonly __wbindgen_externrefs: WebAssembly.Table;
   readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -32,6 +32,15 @@ for (const path of ["/api/market", "/api/history?range=ALL", "/api/outlook"]) {
       ),
     );
     assert.equal(body.model.metrics.length, 4);
+    assert.equal(body.scenarios.monthly.length, 360);
+    assert.equal(body.scenarios.annual.length, 30);
+    assert.equal(body.scenarios.monthly[35].estimate, body.scenarios.anchor);
+    assert.ok(
+      body.scenarios.monthly.every(
+        (p) => p.lower > 0 && p.lower <= p.estimate && p.estimate <= p.upper,
+      ),
+    );
+    assert.ok(body.model.metrics.every((m) => Number.isFinite(m.rmse)));
   }
   console.log(
     JSON.stringify({

@@ -1,5 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
 import { addMonths, currentMonth } from "../../src/lib/data";
+import { initSync } from "../../src/generated/outlook/outlook.js";
+import { readFileSync } from "node:fs";
+import { createScenarios } from "../../src/server/scenarios";
+initSync({
+  module: new WebAssembly.Module(
+    readFileSync("src/generated/outlook/outlook_bg.wasm"),
+  ),
+});
+test.use({ video: "on" });
 
 // Synthetic fixtures exist only in this test file. They are never imported by the app.
 const now = new Date(),
@@ -25,6 +34,7 @@ const outlook = {
     value: 70 + Math.sin(i) * 5,
   })),
   projections,
+  scenarios: createScenarios(projections, addMonths(month, 1)),
   model: {
     version: "test-fixture",
     model: "Adaptive multi-model outlook",
@@ -107,6 +117,91 @@ async function setup(page: Page, available = true) {
     });
   });
 }
+test.describe("extended outlook", () => {
+  for (const width of [360, 390, 768, 1440])
+    for (const reducedMotion of ["reduce", "no-preference"] as const) {
+      test(`${width}px ${reducedMotion}: monthly and annual scenarios`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.emulateMedia({ reducedMotion });
+        const errors: string[] = [];
+        page.on("pageerror", (e) => errors.push(e.message));
+        page.on("console", (m) => {
+          if (
+            m.type() === "warning" &&
+            /GSAP|NaN|target.*not found/i.test(m.text())
+          )
+            errors.push(m.text());
+        });
+        await setup(page);
+        await page.goto("/");
+        await page
+          .getByRole("button", { name: "60 month projection", exact: true })
+          .click();
+        await expect(page.locator(".month-cell")).toHaveCount(60);
+        const first = await page.locator(".month-cell").first().innerText();
+        await page
+          .getByRole("button", { name: "120 month projection", exact: true })
+          .click();
+        await expect(page.locator(".month-cell")).toHaveCount(120);
+        expect(await page.locator(".month-cell").first().innerText()).toBe(
+          first,
+        );
+        const scenario = page.locator(".month-cell").nth(36);
+        await scenario.click();
+        await expect(page.getByRole("dialog")).toContainText(
+          "Assumption-based scenarios, not a prediction interval",
+        );
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await expect(scenario).toBeFocused();
+        for (const years of [15, 30]) {
+          await page
+            .getByRole("button", {
+              name: `${years} year scenario`,
+              exact: true,
+            })
+            .click();
+          await expect(page.locator(".month-cell")).toHaveCount(years);
+          await expect(
+            page.getByRole("heading", { name: "Year by year" }),
+          ).toBeVisible();
+        }
+        await page.locator(".month-cell").nth(3).click();
+        await expect(page.getByRole("dialog")).toContainText("Annual average");
+        await page.keyboard.press("Escape");
+        for (const months of [3, 120, 60, 12])
+          await page
+            .getByRole("button", {
+              name: `${months} month projection`,
+              exact: true,
+            })
+            .click();
+        await expect(page.locator(".month-cell")).toHaveCount(12);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+        ).toBe(true);
+        await page.locator("#outlook").scrollIntoViewIfNeeded();
+        if (reducedMotion === "no-preference") {
+          await expect(page.locator(".forecast-clip")).toHaveAttribute(
+            "transform",
+            "matrix(1,0,0,1,0,0)",
+          );
+          await expect(page.locator(".forecast-band").first()).toHaveCSS(
+            "opacity",
+            "1",
+          );
+        }
+        await page.screenshot({
+          path: `.qa/extended-${width}-${reducedMotion}.png`,
+        });
+        expect(errors).toEqual([]);
+      });
+    }
+});
 for (const width of [360, 390, 768, 1440]) {
   test(`dashboard and month detail at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

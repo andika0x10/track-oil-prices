@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-gsap.registerPlugin(useGSAP);
+import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+gsap.registerPlugin(useGSAP, DrawSVGPlugin, ScrollTrigger);
 
 export interface ChartPoint {
   time: number;
@@ -10,6 +12,8 @@ export interface ChartPoint {
   upper?: number;
   forecast?: boolean;
   month?: string;
+  scenario?: boolean;
+  endMonth?: string;
 }
 interface Props {
   points: ChartPoint[];
@@ -18,6 +22,7 @@ interface Props {
   selectedMonth?: string;
   onSelectMonth?: (month: string) => void;
   monthly?: boolean;
+  annual?: boolean;
 }
 const money = (value: number) => `$${value.toFixed(2)}`;
 export default function PriceChart({
@@ -27,11 +32,14 @@ export default function PriceChart({
   selectedMonth,
   onSelectMonth,
   monthly,
+  annual,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const [hovered, setHovered] = useState<number | null>(null);
   const description = useId();
+  const clipId = useId().replace(/:/g, "");
+  useEffect(() => setHovered(null), [animationKey]);
   useEffect(() => {
     const observer = new ResizeObserver((entries) =>
       setWidth(Math.max(240, entries[0].contentRect.width)),
@@ -47,22 +55,43 @@ export default function PriceChart({
         () => {
           const path =
             ref.current?.querySelector<SVGPathElement>(".history-line");
-          if (path) {
-            const length = path.getTotalLength();
-            gsap.fromTo(
+          if (!points.length) return;
+          const timeline = gsap.timeline({
+            defaults: { ease: "power3.out" },
+            ...(monthly
+              ? {
+                  scrollTrigger: {
+                    trigger: ref.current,
+                    start: "top 90%",
+                    once: true,
+                  },
+                }
+              : { delay: 0.7 }),
+          });
+          if (path && path.getTotalLength() > 0)
+            timeline.from(
               path,
-              { strokeDasharray: length, strokeDashoffset: length },
               {
-                strokeDashoffset: 0,
-                duration: 0.85,
-                ease: "power2.out",
+                drawSVG: 0,
+                duration: 0.65,
                 clearProps: "strokeDasharray,strokeDashoffset",
               },
+              0,
             );
+          if (monthly) {
+            timeline
+              .from(
+                ".forecast-clip",
+                { scaleX: 0, svgOrigin: "0 0", duration: 0.7 },
+                0.35,
+              )
+              .from(".forecast-band", { autoAlpha: 0, duration: 0.45 }, 0.7);
           }
-          const region = ref.current?.querySelector(".forecast-region");
-          if (region)
-            gsap.fromTo(region, { opacity: 0 }, { opacity: 1, duration: 0.65 });
+          timeline.from(
+            ".chart-endpoint",
+            { scale: 0, transformOrigin: "center", duration: 0.35 },
+            monthly ? 0.95 : 0.5,
+          );
         },
         ref,
       );
@@ -108,12 +137,18 @@ export default function PriceChart({
           `${i ? "L" : "M"}${x(p.time).toFixed(2)},${y(accessor(p)).toFixed(2)}`,
       )
       .join(" ");
-  const band = forecast.length
-    ? `${path(forecastLine, (p) => p.upper ?? p.value)} ${[...forecastLine]
-        .reverse()
-        .map((p) => `L${x(p.time)},${y(p.lower ?? p.value)}`)
-        .join(" ")} Z`
-    : "";
+  const bandPath = (rows: ChartPoint[]) =>
+    rows.length
+      ? `${path(rows, (p) => p.upper ?? p.value)} ${[...rows]
+          .reverse()
+          .map((p) => `L${x(p.time)},${y(p.lower ?? p.value)}`)
+          .join(" ")} Z`
+      : "";
+  const statistical = forecastLine.filter((p) => !p.scenario);
+  const scenarioRows = forecast.filter((p) => p.scenario);
+  const scenarioLine = scenarioRows.length
+    ? [...statistical.slice(-1), ...scenarioRows]
+    : [];
   const selected = selectedMonth
     ? points.findIndex((p) => p.month === selectedMonth)
     : -1;
@@ -125,7 +160,9 @@ export default function PriceChart({
     new Intl.DateTimeFormat(
       "en",
       monthly
-        ? { month: "short", year: "2-digit", timeZone: "UTC" }
+        ? annual
+          ? { year: "numeric", timeZone: "UTC" }
+          : { month: "short", year: "2-digit", timeZone: "UTC" }
         : { month: "short", day: "numeric", timeZone: "UTC" },
     ).format(time);
   const nearest = (clientX: number) => {
@@ -219,8 +256,63 @@ export default function PriceChart({
               strokeLinecap="round"
             />
             {forecast.length > 0 && (
-              <g className="forecast-region">
-                <path d={band} fill="#2457E6" fillOpacity="0.09" />
+              <g className="forecast-region" clipPath={`url(#${clipId})`}>
+                <defs>
+                  <clipPath id={clipId}>
+                    <rect
+                      className="forecast-clip"
+                      x="0"
+                      y="0"
+                      width={width}
+                      height={height}
+                    />
+                  </clipPath>
+                </defs>
+                <path
+                  className="forecast-band"
+                  d={bandPath(statistical)}
+                  fill="#2457E6"
+                  fillOpacity="0.09"
+                />
+                <path
+                  className="forecast-band"
+                  d={bandPath(scenarioLine)}
+                  fill="#2457E6"
+                  fillOpacity="0.045"
+                />
+                {scenarioLine.length > 0 && (
+                  <>
+                    <path
+                      d={path(scenarioLine, (p) => p.lower ?? p.value)}
+                      stroke="#2457E6"
+                      strokeOpacity="0.45"
+                      fill="none"
+                      strokeDasharray="2 5"
+                    />
+                    <path
+                      d={path(scenarioLine, (p) => p.upper ?? p.value)}
+                      stroke="#2457E6"
+                      strokeOpacity="0.45"
+                      fill="none"
+                      strokeDasharray="2 5"
+                    />
+                    <line
+                      x1={x(statistical.at(-1)!.time)}
+                      x2={x(statistical.at(-1)!.time)}
+                      y1={top}
+                      y2={bottom}
+                      stroke="#626B78"
+                      strokeDasharray="2 4"
+                    />
+                    <text
+                      x={x(statistical.at(-1)!.time) + 5}
+                      y={top - 6}
+                      className="chart-label"
+                    >
+                      Scenarios
+                    </text>
+                  </>
+                )}
                 <path
                   d={path(forecastLine)}
                   fill="none"
@@ -240,7 +332,7 @@ export default function PriceChart({
               </g>
             )}
             {last && (
-              <>
+              <g className="chart-endpoint">
                 <circle
                   cx={x(last.time)}
                   cy={y(last.value)}
@@ -254,23 +346,22 @@ export default function PriceChart({
                   r="3"
                   fill="#2457E6"
                 />
-              </>
+              </g>
             )}
             {Array.from({ length: tickCount }, (_, i) => {
-              const index = Math.round(
-                ((points.length - 1) * i) / (tickCount - 1),
-              );
+              const time =
+                firstTime + ((lastTime - firstTime) * i) / (tickCount - 1);
               return (
                 <text
                   key={i}
-                  x={x(points[index].time)}
+                  x={x(time)}
                   y={height - 4}
                   textAnchor={
                     i === 0 ? "start" : i === tickCount - 1 ? "end" : "middle"
                   }
                   className="chart-label"
                 >
-                  {dateLabel(points[index].time)}
+                  {dateLabel(time)}
                 </text>
               );
             })}
@@ -312,13 +403,20 @@ export default function PriceChart({
           aria-live="polite"
         >
           <span>
-            {dateLabel(active.time)}
-            {active.forecast ? " · Projection" : ""}
+            {active.endMonth
+              ? `${active.month} – ${active.endMonth}`
+              : dateLabel(active.time)}
+            {active.forecast
+              ? active.scenario
+                ? " · Base scenario"
+                : " · Projection"
+              : ""}
           </span>
           <strong>{money(active.value)}</strong>
           {active.lower !== undefined && (
             <small>
-              {money(active.lower)}–{money(active.upper!)} range
+              {money(active.lower)}–{money(active.upper!)}{" "}
+              {active.scenario ? "low–high scenarios" : "range"}
             </small>
           )}
         </div>

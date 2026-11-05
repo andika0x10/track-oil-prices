@@ -2,10 +2,21 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 const MIN_TRAIN: usize = 120;
-const VERSION: &str = "brent-0.2.0";
+const VERSION: &str = "brent-0.3.0";
+fn direction(value: f64) -> i8 {
+    if value > 0.0 {
+        1
+    } else if value < 0.0 {
+        -1
+    } else {
+        0
+    }
+}
 mod adaptive;
+pub mod research;
+pub mod scenarios;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Input {
     pub values: Vec<f64>,
     pub horizon: usize,
@@ -13,7 +24,7 @@ pub struct Input {
     pub drivers: Option<Drivers>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Drivers {
     pub stocks: Vec<Option<f64>>,
     pub production: Vec<Option<f64>>,
@@ -35,6 +46,10 @@ pub struct Metric {
     pub horizon: usize,
     pub mae: f64,
     pub baseline_mae: f64,
+    pub rmse: f64,
+    pub baseline_rmse: f64,
+    pub direction_accuracy: f64,
+    pub mean_interval_width: Option<f64>,
     pub coverage: Option<f64>,
     pub samples: usize,
     pub coverage_samples: usize,
@@ -55,6 +70,15 @@ pub struct Output {
     pub validation_window_months: usize,
     pub evaluation_months: usize,
     pub driver_lag_months: usize,
+    #[serde(skip)]
+    pub(crate) audit: Vec<AuditForecast>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AuditForecast {
+    origin: usize,
+    horizon: usize,
+    estimate: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -127,6 +151,13 @@ pub fn calculate(input: Input) -> Result<Output, String> {
 pub fn forecast(json: &str) -> Result<String, JsError> {
     let input: Input = serde_json::from_str(json).map_err(|e| JsError::new(&e.to_string()))?;
     let output = calculate(input).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&output).map_err(|e| JsError::new(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn build_scenarios(json: &str) -> Result<String, JsError> {
+    let points = serde_json::from_str(json).map_err(|e| JsError::new(&format!("{e}")))?;
+    let output = scenarios::calculate(points).map_err(|e| JsError::new(&e))?;
     serde_json::to_string(&output).map_err(|e| JsError::new(&e.to_string()))
 }
 

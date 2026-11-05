@@ -1,0 +1,24 @@
+{
+  "baselineRevision": "fb933385ab774f935539220e4a77ec184636f9b4",
+  "observations": 474,
+  "environment": "Node native WebAssembly, local Windows; timings are not Cloudflare CPU guarantees",
+  "productionPointsUnchanged": true,
+  "engines": [
+    {
+      "name": "baseline",
+      "wasmBytes": 162545,
+      "initializationMs": 2.837999999999994,
+      "medianForecastMs": 62.66360000000009,
+      "samples": 15
+    },
+    {
+      "name": "current",
+      "wasmBytes": 181920,
+      "initializationMs": 0.5605000000000473,
+      "medianForecastMs": 64.39169999999967,
+      "samples": 15
+    }
+  ],
+  "firstScenarioMs": 1.2727999999997337,
+  "medianScenarioMs": 0.23759999999992942
+}

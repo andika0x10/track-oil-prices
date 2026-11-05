@@ -381,9 +381,14 @@ h1 {
   margin: 0 0 10px;
 }
 .horizon-control {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
   width: 100%;
 }
 .horizon-control button {
+  position: relative;
+  isolation: isolate;
   flex: 1;
   min-height: 40px;
 }
@@ -392,6 +397,10 @@ h1 {
   color: #fff;
   box-shadow: 0 2px 5px #2457e620;
 }
+.horizon-control button[aria-pressed="true"] { background: transparent; }
+.horizon-indicator { position: absolute; inset: 0; background: #2457e6; border-radius: inherit; z-index: -1; }
+.horizon-label { position: relative; }
+.scenario-label { color: #2457e6; font-size: 11px; display: block; margin-top: 5px; }
 .outlook-chart-wrap {
   position: relative;
   margin-top: 28px;
@@ -984,6 +993,7 @@ tbody th {
   }
   .horizon-control {
     width: auto;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
   .horizon-control button {
     min-width: 48px;

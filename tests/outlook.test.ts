@@ -65,7 +65,10 @@ test("real Wasm service bootstraps, skips unchanged data, retains cache on failu
   assert.equal(first.projections.at(-1)?.month, addMonths(currentMonth(), 36));
   assert.equal(calls, 1);
   assert.equal(first.drivers?.length, 2);
-  assert.equal(first.model.version, "brent-0.2.0");
+  assert.equal(first.model.version, "brent-0.3.0");
+  assert.equal(first.scenarios?.monthly.length, 360);
+  assert.equal(first.scenarios?.annual.length, 30);
+  assert.equal(first.scenarios?.monthly[35].estimate, first.scenarios?.anchor);
   const unchanged = await service.getOutlook(env, true);
   assert.equal(calls, 1);
   assert.equal(unchanged.generatedAt, first.generatedAt);
@@ -92,6 +95,16 @@ test("real Wasm service bootstraps, skips unchanged data, retains cache on failu
   assert.equal(retained.freshness, "stale");
   assert.deepEqual(retained.projections, revised.projections);
   assert.equal(calls, 3);
+  storageFailure = false;
+  revised.scenarios!.startMonth = currentMonth();
+  const reanchored = await service.getOutlook(env);
+  assert.equal(
+    calls,
+    4,
+    "A new scenario start month must bypass a fresh daily cache",
+  );
+  assert.equal(reanchored.scenarios?.startMonth, addMonths(currentMonth(), 1));
+  assert.ok(reanchored.model.metrics.every((m) => Number.isFinite(m.rmse)));
 });
 test("model initialization failure is a safe API error", async (t) => {
   const original = globalThis.fetch;

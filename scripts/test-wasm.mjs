@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { initSync, forecast } from "../src/generated/outlook/outlook.js";
+import {
+  initSync,
+  forecast,
+  build_scenarios,
+} from "../src/generated/outlook/outlook.js";
 
 const start = performance.now();
 initSync({
@@ -48,6 +52,34 @@ function compare(a, b) {
   } else assert.equal(a, b);
 }
 compare(wasm, expected);
+const scenarioInput = Array.from({ length: 36 }, (_, i) => ({
+  horizon: i + 1,
+  estimate: 80,
+  lower: 60,
+  upper: 100,
+  scenario: false,
+}));
+const nativeScenarios = spawnSync(
+  "cargo",
+  [
+    "run",
+    "--quiet",
+    "--locked",
+    "--release",
+    "--manifest-path",
+    "crates/outlook/Cargo.toml",
+    "--bin",
+    "native-fixture",
+    "--",
+    "--scenarios",
+  ],
+  { encoding: "utf8" },
+);
+assert.equal(nativeScenarios.status, 0, nativeScenarios.stderr);
+compare(
+  JSON.parse(build_scenarios(JSON.stringify(scenarioInput))),
+  JSON.parse(nativeScenarios.stdout),
+);
 const driverInput = {
   ...input,
   drivers: {

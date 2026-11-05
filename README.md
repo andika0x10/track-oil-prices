@@ -1,6 +1,6 @@
 # Brent Outlook
 
-Mobile-first Brent dashboard with live Hyperliquid prices and monthly EIA benchmark projections for 3M, 6M, 1Y, and 3Y.
+Mobile-first Brent dashboard with live Hyperliquid prices and monthly EIA benchmark projections for 3M, 6M, 1Y, and 3Y. 5Y/10Y keep monthly resolution; 15Y/30Y show annual averages. After month 36, explicitly labelled low/base/high scenarios replace statistical projections.
 
 **Stack:** Astro, React, Tailwind, GSAP, Rust/Wasm, Cloudflare Workers/KV.
 
@@ -30,7 +30,23 @@ Open `http://localhost:4321`. Without an EIA key, live prices work but forecasts
 - Evaluation compares the adaptive strategy and baseline over the latest 60 observed target months. 80% intervals use matured strategy errors; actual coverage is reported.
 - Historical revisions and assumed publication lags limit backtests. Individual horizons can underperform baseline. Flat estimates remain possible when justified.
 
-Daily refresh at 00:00 UTC stores results in `OUTLOOK` KV. Price/fundamental revisions invalidate the cache; failures retain stale results. Version 0.2 uses a new cache key to replace old forecasts.
+Daily refresh at 00:00 UTC stores results in `OUTLOOK` KV. Price/fundamental/daily-data revisions invalidate the cache; failures retain stale results. Version 0.3 adds scenario metadata and a new cache key. Scenario anchors rebuild at month rollover.
+
+## Animation and research
+
+GSAP coordinates a masked word entrance, chart drawing, scroll-triggered interval reveals, a moving horizon indicator and calendar groups. Reduced-motion displays final states immediately. Long calendars animate only groups entering the viewport.
+
+Daily EIA Brent history supplies a month-end close baseline and volatility features for a native Rust benchmark. Ridge, elastic net and two ensembles are evaluated with frozen pre-holdout tuning. No challenger passed the 5% MAE/no-RMSE-regression gate on the included snapshot, so production model selection is unchanged. See [research findings and assumptions](docs/model-research.md).
+
+```sh
+npm run benchmark -- docs/benchmarks/input.json
+# Refresh the public dataset from a configured running dev server:
+npm run benchmark
+# Compare local Wasm performance against the original engine:
+npm run profile:model -- fb933385ab774f935539220e4a77ec184636f9b4
+```
+
+Scenario assumptions are 2% annual USD inflation and −2%/0%/+2% annual real price growth, compounded monthly. The low/high scenario range is not an 80% prediction interval.
 
 ## Checks
 
