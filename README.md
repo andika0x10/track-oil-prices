@@ -6,14 +6,13 @@ Mobile-first Brent dashboard with live Hyperliquid prices and monthly EIA benchm
 
 ## Local setup
 
-Requires Node ≥22.23.4, Rustup, and a native Rust linker. Rust 1.99.1 is pinned.
+Requires Node ≥22.23.4. The compiled Wasm binary and JavaScript bindings are committed; normal builds do not need Rust or wasm-bindgen.
 
 ```sh
 npm ci
-cargo install wasm-bindgen-cli --version 0.2.105 --locked
 ```
 
-Copy `.dev.vars.example` to `.dev.vars` and set your [EIA API key](https://www.eia.gov/opendata/). Keep existing secrets intact. `WASM_BINDGEN_BIN` can point to a matching prebuilt executable.
+Copy `.dev.vars.example` to `.dev.vars` and set your [EIA API key](https://www.eia.gov/opendata/). Keep existing secrets intact.
 
 ```sh
 npm run dev -- --background
@@ -36,8 +35,7 @@ Daily refresh at 00:00 UTC stores results in `OUTLOOK` KV. Price/fundamental rev
 ## Checks
 
 ```sh
-npm run build:wasm && npm run check && npm test
-npm run test:rust && npm run test:wasm && npm run build
+npm run check && npm test && npm run build
 npx playwright install chromium
 npm run test:e2e
 npm run test:smoke
@@ -45,8 +43,10 @@ npm run test:smoke
 
 Browser/smoke tests need a running server. Override `PLAYWRIGHT_BASE_URL` for another port. Tests cover native/Wasm parity, data lag, causal selection, cache revisions, reconnects, and four viewport sizes.
 
+After changing Rust sources, install Rustup and `cargo install wasm-bindgen-cli --version 0.2.105 --locked`, then run `npm run build:wasm`, `npm run test:rust`, and `npm run test:wasm`. Commit all four generated files in `src/generated/outlook/` with the source changes.
+
 For production-runtime checks, run `npx wrangler dev --config dist/server/wrangler.json --port 4322`, then `npm run test:cron` or `npm run preview:capture`.
 
 ## Deploy
 
-Configure the `OUTLOOK` KV binding and `EIA_API_KEY` Worker secret, then run `npm run deploy`. Budget CPU for uncached backtests and monitor refresh failures. `.dev.vars` and `dist/` are ignored and must stay private.
+Cloudflare build command: `npm run build` (runs only `astro build`). Deploy command: `npx wrangler deploy`. Configure the `OUTLOOK` KV binding and `EIA_API_KEY` Worker secret. For manual deployment, use `npm run deploy`. `.dev.vars` and `dist/` are ignored and must stay private.

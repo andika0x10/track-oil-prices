@@ -29,9 +29,8 @@ pnpm-debug.log*
 !.dev.vars.example
 !.env.example
 
-# Rust / generated bindings / local tools / browser QA
+# Rust / local tools / browser QA
 crates/outlook/target/
-src/generated/
 .tools/
 test-results/
 playwright-report/

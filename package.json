@@ -6,8 +6,8 @@
     "node": ">=22.23.4"
   },
   "scripts": {
-    "dev": "node scripts/build-wasm.mjs && astro dev",
-    "build": "node scripts/build-wasm.mjs && astro build",
+    "dev": "astro dev",
+    "build": "astro build",
     "build:wasm": "node scripts/build-wasm.mjs",
     "check": "astro check",
     "test": "tsx --test tests/*.test.ts",
