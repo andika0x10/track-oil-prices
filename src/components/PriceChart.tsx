@@ -277,21 +277,21 @@ export default function PriceChart({
                 <path
                   className="forecast-band"
                   d={bandPath(scenarioLine)}
-                  fill="#2457E6"
+                  fill="#64748B"
                   fillOpacity="0.045"
                 />
                 {scenarioLine.length > 0 && (
                   <>
                     <path
                       d={path(scenarioLine, (p) => p.lower ?? p.value)}
-                      stroke="#2457E6"
+                      stroke="#64748B"
                       strokeOpacity="0.45"
                       fill="none"
                       strokeDasharray="2 5"
                     />
                     <path
                       d={path(scenarioLine, (p) => p.upper ?? p.value)}
-                      stroke="#2457E6"
+                      stroke="#64748B"
                       strokeOpacity="0.45"
                       fill="none"
                       strokeDasharray="2 5"
@@ -314,13 +314,15 @@ export default function PriceChart({
                   </>
                 )}
                 <path
-                  d={path(forecastLine)}
+                  d={path(statistical)}
                   fill="none"
                   stroke="#2457E6"
                   strokeWidth="2"
                   strokeDasharray="4 4"
                   strokeLinejoin="round"
                 />
+                {scenarioLine.length > 0 && <path d={path(scenarioLine)} fill="none" stroke="#64748B"
+                  strokeWidth="2" strokeDasharray="2 5" strokeLinejoin="round" />}
                 <line
                   x1={x(forecast[0].time)}
                   x2={x(forecast[0].time)}
@@ -337,14 +339,14 @@ export default function PriceChart({
                   cx={x(last.time)}
                   cy={y(last.value)}
                   r="6"
-                  fill="#2457E6"
+                  fill={last.scenario ? "#64748B" : "#2457E6"}
                   fillOpacity="0.12"
                 />
                 <circle
                   cx={x(last.time)}
                   cy={y(last.value)}
                   r="3"
-                  fill="#2457E6"
+                  fill={last.scenario ? "#64748B" : "#2457E6"}
                 />
               </g>
             )}

@@ -35,6 +35,27 @@ export interface Observation {
   month: string;
   value: number;
 }
+/** Public monthly data only. EIA credentials never leave the server. */
+export interface Benchmark {
+  source: "EIA";
+  instrument: "Europe Brent spot benchmark";
+  unit: "USD/barrel";
+  observations: Observation[];
+  lastObservation: string;
+  checkedAt: string;
+  freshness: Freshness;
+  fingerprint: string;
+}
+export type BrowserModel = "chronos-bolt-small" | "chronos-bolt-tiny";
+export interface BrowserInference {
+  engine: "forecast-web";
+  modelId: BrowserModel;
+  revision: string;
+  backend: "webgpu" | "wasm";
+  dtype: string;
+  inputFingerprint: string;
+  intervalMethod: "model-quantiles";
+}
 export interface Projection {
   month: string;
   horizon: number;
@@ -90,7 +111,7 @@ export interface ModelResult {
   model: string;
   points: Omit<Projection, "month">[];
   metrics: Metric[];
-  minimumTrainingMonths: number;
+  minimumTrainingMonths?: number;
   intervalLevel: number;
   validationWindowMonths?: number;
   evaluationMonths?: number;
@@ -111,6 +132,7 @@ export interface Outlook {
   projections: Projection[];
   model: Omit<ModelResult, "points">;
   performance: { initializationMs: number; computationMs: number };
+  inference?: BrowserInference;
 }
 export interface ApiFailure {
   error: { code: string; message: string };

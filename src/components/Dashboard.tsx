@@ -5,7 +5,10 @@ import { SplitText } from "gsap/SplitText";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Flip } from "gsap/Flip";
 import PriceChart, { type ChartPoint } from "./PriceChart";
-import { api, useMarket } from "../hooks/useMarket";
+import ForecastMethodology from "./ForecastMethodology";
+import { useMarket } from "../hooks/useMarket";
+import { useOutlook } from "../hooks/useOutlook";
+import { BROWSER_MODELS } from "../lib/forecast";
 import {
   HORIZONS,
   type Horizon,
@@ -213,7 +216,7 @@ function MonthDetail({
         {point ? (
           <>
             <div className="range-track">
-              <span />
+              <span style={{ left: `${Math.max(0, Math.min(100, (point.estimate - point.lower) / (point.upper - point.lower || 1) * 100))}%` }} />
             </div>
             <div className="range-endpoints">
               <div>
@@ -234,6 +237,8 @@ function MonthDetail({
                 ? "Assumption-based scenarios, not a prediction interval. USD inflation: 2% annually. Real price growth: low −2%, base 0%, high +2%. All paths compound monthly from the month-36 estimate."
                 : point.endMonth
                   ? "Annual averages of monthly estimates and interval endpoints. These bounds are not a calibrated annual 80% interval."
+                : outlook?.inference
+                  ? "The model’s 10th–90th percentile range: a nominal 80% prediction interval. Its actual coverage on Brent has not yet been established."
                   : "An 80% prediction interval, calibrated against historical forecast errors. Actual prices may fall outside this range."}
             </p>
             <dl className="detail-meta">
@@ -286,12 +291,11 @@ export default function Dashboard() {
     loading,
     retry,
   } = useMarket(range);
-  const [horizon, setHorizon] = useState<Horizon>(12),
-    [outlook, setOutlook] = useState<Outlook>();
-  const [outlookLoading, setOutlookLoading] = useState(true),
-    [outlookError, setOutlookError] = useState("");
-  const [outlookRevision, setOutlookRevision] = useState(0),
-    [selectedMonth, setSelectedMonth] = useState<string>();
+  const [horizon, setHorizon] = useState<Horizon>(12);
+  const [selectedMonth, setSelectedMonth] = useState<string>();
+  const [calendarLimit, setCalendarLimit] = useState(12);
+  const { outlook, loading: outlookLoading, error: outlookError, phase, progress,
+    modelId, chooseModel, cached, retry: retryOutlook } = useOutlook();
   const [methodOpen, setMethodOpen] = useState(false),
     [now, setNow] = useState<Date>();
   useEffect(() => {
@@ -299,36 +303,6 @@ export default function Dashboard() {
     const t = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    let stopped = false;
-    const load = async () => {
-      setOutlookLoading(true);
-      try {
-        const data = await api<Outlook>("/api/outlook", controller.signal);
-        if (!stopped) {
-          setOutlook(data);
-          setOutlookError("");
-        }
-      } catch (e) {
-        if (!stopped)
-          setOutlookError(
-            e instanceof Error
-              ? e.message
-              : "The benchmark outlook is temporarily unavailable.",
-          );
-      } finally {
-        if (!stopped) setOutlookLoading(false);
-      }
-    };
-    void load();
-    const timer = setInterval(load, 86400_000);
-    return () => {
-      stopped = true;
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [outlookRevision]);
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
@@ -379,6 +353,7 @@ export default function Dashboard() {
       root.current!.querySelectorAll(".horizon-indicator"),
     );
     setSelectedMonth(undefined);
+    setCalendarLimit(value >= 180 ? 10 : 12);
     setHorizon(value);
   });
   useGSAP(
@@ -393,7 +368,7 @@ export default function Dashboard() {
               ease: "power3.inOut",
               prune: true,
             });
-          gsap.fromTo(
+          if (root.current?.querySelector(".calendar-grid")) gsap.fromTo(
             ".calendar-grid",
             { autoAlpha: 0.4, y: 8 },
             { autoAlpha: 1, y: 0, duration: 0.3, overwrite: "auto" },
@@ -418,7 +393,7 @@ export default function Dashboard() {
     },
     {
       scope: root,
-      dependencies: [horizon, outlookLoading],
+      dependencies: [horizon, outlookLoading, calendarLimit],
       revertOnUpdate: true,
     },
   );
@@ -454,12 +429,19 @@ export default function Dashboard() {
     [outlook, horizon, now],
   );
   const forecastByMonth = new Map(visible.map((p) => [p.month, p]));
-  const calendarMonths = annual
+  const allCalendarMonths = annual
     ? now
       ? Array.from({ length: horizon / 12 }, (_, i) => months[i * 12])
       : []
     : months;
+  const calendarMonths = allCalendarMonths.slice(0, calendarLimit);
   const years = [...new Set(calendarMonths.map((m) => m.slice(0, 4)))];
+  const endpoint = visible.at(-1);
+  const progressPercent = progress.total ? Math.min(100, Math.floor(progress.loaded / progress.total * 100)) : undefined;
+  const phaseLabel = phase === "checking" ? "Checking the latest EIA data"
+    : phase === "downloading" ? "Preparing your prediction model"
+    : phase === "predicting" ? "Calculating the months ahead"
+    : "The outlook is not available yet.";
   const livePoints: ChartPoint[] =
     history?.candles.map((c) => ({ time: c.time, value: c.close })) || [];
   const outlookPoints = useMemo<ChartPoint[]>(
@@ -672,7 +654,7 @@ export default function Dashboard() {
           <div className="section-top flex flex-wrap items-end justify-between gap-6">
             <div>
               <div className="section-kicker">
-                <span className="blue-line" /> Brent benchmark outlook
+                <span className="blue-line" /> EIA Brent benchmark
               </div>
               <h2 id="outlook-title">
                 {annual ? "The years ahead." : "The months ahead."}
@@ -680,21 +662,22 @@ export default function Dashboard() {
               <p className="section-description">
                 {annual
                   ? "A longer perspective. One year at a time."
-                  : "A longer perspective. One month at a time."}
+                  : "Monthly predictions, using the latest published Brent history."}
               </p>
             </div>
-            <div
-              className="segmented horizon-control"
-              role="group"
-              aria-label="Projection horizon"
-            >
-              {HORIZONS.map((v) => (
+            <div className="horizon-groups">
+              {[{ label: "Predictions", values: HORIZONS.filter((v) => v <= 36) },
+                { label: "Long-range scenarios", values: HORIZONS.filter((v) => v > 36) }].map((group) => (
+              <div className="horizon-group" key={group.label}>
+                <span>{group.label}</span>
+                <div className="segmented forecast-horizons" role="group" aria-label={group.label}>
+              {group.values.map((v) => (
                 <button
                   key={v}
                   aria-pressed={horizon === v}
                   onClick={() => chooseHorizon(v)}
                   aria-label={
-                    v >= 180
+                    v > 36
                       ? `${v / 12} year scenario`
                       : `${v} month projection`
                   }
@@ -709,8 +692,31 @@ export default function Dashboard() {
                   <span className="horizon-label">{horizonLabel(v)}</span>
                 </button>
               ))}
+                </div>
+              </div>
+              ))}
             </div>
           </div>
+          <div className="forecast-toolbar">
+            <div className="forecast-status" role="status" aria-live="polite">
+              <span className={`forecast-status-dot ${outlookLoading ? "pending" : outlookError ? "delayed" : ""}`} />
+              <span>{outlookLoading ? phaseLabel : outlookError ? (outlook ? "Previous prediction retained" : "Prediction unavailable")
+                : `${outlook?.model.model}${cached ? " · Saved calculation" : " · Calculated in your browser"}`}
+                {outlook && phase === "downloading" && progressPercent !== undefined ? ` (${progressPercent}%)` : ""}</span>
+            </div>
+            <button className="text-button" onClick={retryOutlook} disabled={outlookLoading}>
+              <Icon name="refresh" size={14} /> {outlookLoading ? "Checking" : "Check latest data"}
+            </button>
+          </div>
+          {outlook && endpoint && (
+            <div className="outlook-summary">
+              <div><span>{fullMonth(endpoint.endMonth ?? endpoint.month)} {endpoint.scenario ? "base scenario" : "estimate"}</span>
+                <strong>{money(endpoint.estimate)}</strong></div>
+              <div><span>{endpoint.scenario ? "Low–high scenarios" : "Model’s 80% range"}</span>
+                <strong className="summary-range">{money(endpoint.lower)} – {money(endpoint.upper)}</strong></div>
+              <div><span>Latest EIA observation</span><strong className="summary-date">{fullMonth(outlook.lastObservation)}</strong></div>
+            </div>
+          )}
           <div className="outlook-chart-wrap" aria-busy={outlookLoading}>
             <div className="outlook-chart-header">
               <span>
@@ -729,9 +735,10 @@ export default function Dashboard() {
                   <i className="legend-projection" />
                   Projection
                 </span>
+                {horizon > 36 && <span><i className="legend-scenario" />Scenarios</span>}
                 <span>
                   <i className="legend-range" />
-                  {horizon > 36 ? "Interval / scenario range" : "80% range"}
+                  {horizon > 36 ? "Model / scenario range" : "Model’s 80% range"}
                 </span>
               </div>
             </div>
@@ -750,20 +757,25 @@ export default function Dashboard() {
                   <Icon name="calendar" size={25} />
                 </span>
                 <h3>
-                  {outlookLoading
-                    ? "Building the longer view…"
-                    : "The outlook is not available yet."}
+                  {phaseLabel}
                 </h3>
                 <p>
                   {outlookLoading
-                    ? "Loading benchmark history and model results."
+                    ? phase === "checking" ? "Looking for the latest complete monthly observations."
+                      : phase === "downloading" ? `${BROWSER_MODELS[modelId].name} downloads up to ${BROWSER_MODELS[modelId].downloadMB} MB. Your browser can save it for future visits.`
+                      : "Your device is calculating monthly estimates and uncertainty ranges."
                     : outlookError ||
                       "Monthly estimates will appear when benchmark data is available."}
                 </p>
+                {phase === "downloading" && progressPercent !== undefined && (
+                  <div className="model-progress" role="progressbar" aria-label="Prediction model download" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100}>
+                    <span style={{ width: `${progressPercent}%` }} /><small>{progressPercent}%</small>
+                  </div>
+                )}
                 {!outlookLoading && (
                   <button
                     className="text-button"
-                    onClick={() => setOutlookRevision((v) => v + 1)}
+                    onClick={retryOutlook}
                   >
                     <Icon name="refresh" size={14} /> Check again
                   </button>
@@ -775,26 +787,37 @@ export default function Dashboard() {
               <span>
                 {outlook
                   ? `Observed through ${fullMonth(outlook.lastObservation)}`
-                  : "Estimates are never simulated"}
+                  : "Complete monthly observations from EIA"}
               </span>
             </div>
           </div>
           {outlook && (outlook.freshness === "stale" || outlookError) && (
             <p className="inline-message" role="status">
-              Showing the last valid outlook from{" "}
-              {dateTime(outlook.generatedAt)}.{" "}
-              <button onClick={() => setOutlookRevision((v) => v + 1)}>
+              {outlook.freshness === "stale"
+                ? `EIA could not be refreshed. Data was last checked ${dateTime(outlook.checkedAt)}.`
+                : `Showing the previous prediction from ${dateTime(outlook.generatedAt)}.`}{" "}
+              <button onClick={retryOutlook}>
                 Retry update
               </button>
             </p>
           )}
           {outlook && (
             <p className="history-note">
-              {outlook.model.model === "Last-observation baseline"
-                ? "No alternative cleared the validation threshold. Central estimates stay at the last observed price; ranges show uncertainty."
-                : "Each month uses a model selected from past forecast errors. Inputs include Brent history, U.S. crude inventories and production."}
+              Predictions use published monthly averages. New EIA releases and revisions trigger a new calculation;
+              unchanged data reuses your saved result.
             </p>
           )}
+          <div className="model-choice">
+            <p>Choose a prediction model <span>Your browser can save the model for future visits.</span></p>
+            <div role="group" aria-label="Prediction model" className="model-options">
+              {(Object.keys(BROWSER_MODELS) as (keyof typeof BROWSER_MODELS)[]).map((id) => (
+                <button key={id} onClick={() => chooseModel(id)} aria-pressed={modelId === id}>
+                  {id === "chronos-bolt-small" ? "Standard" : "Lightweight"}
+                  <span>{BROWSER_MODELS[id].downloadMB} MB</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="outlook-explainer">
             <span className="info-dot">i</span>
             <p>
@@ -805,9 +828,10 @@ export default function Dashboard() {
               contract.{" "}
               {annual
                 ? "The first three annual ranges average monthly interval endpoints; they are not calibrated annual intervals."
-                : "For the first 36 months, shading shows the historical 80% prediction interval; actual prices can fall outside it."}
+                : "Shading shows the model’s 10th–90th percentile range. Actual coverage on Brent has not yet been established."}
             </p>
           </div>
+          {outlook && visible.length > 0 && <>
           <div className="calendar-heading flex items-center justify-between gap-3">
             <h3>{annual ? "Year by year" : "Month by month"}</h3>
             <span className="muted">
@@ -860,7 +884,7 @@ export default function Dashboard() {
                           </span>
                           {point && (
                             <span className="month-mini-range">
-                              <i />
+                              <i style={{ left: `${Math.max(0, Math.min(100, (point.estimate - point.lower) / (point.upper - point.lower || 1) * 100))}%` }} />
                             </span>
                           )}
                         </button>
@@ -870,6 +894,15 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+          {calendarLimit < allCalendarMonths.length && (
+            <div className="calendar-pagination">
+              <span>Showing {calendarMonths.length} of {allCalendarMonths.length} {annual ? "years" : "months"}</span>
+              <button className="text-button" onClick={() => setCalendarLimit((n) => n + (annual ? 10 : 12))}>
+                Show next {Math.min(annual ? 10 : 12, allCalendarMonths.length - calendarLimit)} {annual ? "years" : "months"}
+                <Icon name="plus" size={14} />
+              </button>
+            </div>
+          )}
           <div className="calendar-footnote">
             <span>
               <span className="tiny-blue-dot" />
@@ -880,9 +913,10 @@ export default function Dashboard() {
             <span>
               {outlook
                 ? `Checked ${dateTime(outlook.checkedAt)}`
-                : "Checked daily for new benchmark data"}
+                : "Checked when you open this page"}
             </span>
           </div>
+          </>}
         </section>
         <section
           className="method-section"
@@ -908,141 +942,7 @@ export default function Dashboard() {
               </span>
             </button>
           </div>
-          {methodOpen && (
-            <div className="method-body" id="method-body">
-              <div className="method-columns">
-                <div>
-                  <span className="method-step">01</span>
-                  <h3>Start with history</h3>
-                  <p>
-                    Complete monthly Brent prices, U.S. commercial crude
-                    inventories, and production from EIA. Fundamentals use a
-                    two-month publication lag. Live perpetual prices are
-                    provided separately by Hyperliquid.
-                  </p>
-                </div>
-                <div>
-                  <span className="method-step">02</span>
-                  <h3>Test the model</h3>
-                  <p>
-                    Trend, mean reversion, and fundamental regression compete
-                    against the last observed price at each horizon. A candidate
-                    must reduce recent validation MAE by at least 2%. Only
-                    then-known forecast errors affect each historical selection.
-                  </p>
-                </div>
-                <div>
-                  <span className="method-step">03</span>
-                  <h3>Show the uncertainty</h3>
-                  <p>
-                    Historical forecast errors calibrate an 80% prediction
-                    interval. Longer horizons are projections, not guarantees.
-                  </p>
-                </div>
-              </div>
-              {outlook ? (
-                <>
-                  <div className="model-summary">
-                    <span>
-                      Model selection<strong>{outlook.model.model}</strong>
-                    </span>
-                    <span>
-                      Last calculated
-                      <strong>{dateTime(outlook.generatedAt)}</strong>
-                    </span>
-                  </div>
-                  <div className="metrics-scroll">
-                    <table>
-                      <caption>Forward-tested strategy performance</caption>
-                      <thead>
-                        <tr>
-                          <th>Horizon</th>
-                          <th>Current model</th>
-                          <th>Model MAE</th>
-                          <th>Baseline MAE</th>
-                          <th>RMSE</th>
-                          <th>Direction accuracy</th>
-                          <th>Mean range width</th>
-                          <th>Range coverage</th>
-                          <th>Tests / coverage tests</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {outlook.model.metrics.map((m) => (
-                          <tr key={m.horizon}>
-                            <th>{horizonLabel(m.horizon)}</th>
-                            <td>{m.selectedModel || outlook.model.model}</td>
-                            <td>{money(m.mae)}</td>
-                            <td>{money(m.baselineMae)}</td>
-                            <td>{money(m.rmse)}</td>
-                            <td>
-                              {m.directionAccuracy === undefined
-                                ? "—"
-                                : `${(m.directionAccuracy * 100).toFixed(1)}%`}
-                            </td>
-                            <td>{money(m.meanIntervalWidth ?? undefined)}</td>
-                            <td>
-                              {m.coverage === null
-                                ? "Not enough tests"
-                                : `${(m.coverage * 100).toFixed(1)}%`}
-                            </td>
-                            <td>
-                              {m.samples} / {m.coverageSamples}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="method-small">
-                    MAE is the average absolute forecast error in USD/barrel;
-                    lower is better. Results cover the latest{" "}
-                    {outlook.model.evaluationMonths || 60} observed target
-                    months. Each historical forecast selected its model using
-                    only then-known errors, not the outcomes being evaluated.
-                    Current selections can differ from historical ones. Coverage
-                    also uses only previously matured errors. Horizons are
-                    measured from the last observed month. RMSE penalizes large
-                    misses; direction accuracy counts correct up/down/unchanged
-                    forecasts. Annual scenario ranges are not calibrated
-                    prediction intervals.
-                  </p>
-                  {outlook.drivers && (
-                    <p className="method-small">
-                      Fundamental data:{" "}
-                      {outlook.drivers
-                        .map(
-                          (driver) =>
-                            `${driver.name} through ${fullMonth(driver.lastObservation)}`,
-                        )
-                        .join("; ")}
-                      . Inputs are lagged by two months; future production and
-                      inventories are not assumed.
-                    </p>
-                  )}
-                  <p className="method-small">
-                    Engine {outlook.model.version} · Rust / WebAssembly ·{" "}
-                    {outlook.performance.computationMs.toFixed(1)}ms computation
-                    · {outlook.performance.initializationMs.toFixed(1)}ms
-                    initialization
-                  </p>
-                </>
-              ) : (
-                <p className="evaluation-empty">
-                  Model performance and interval coverage will appear with the
-                  first valid benchmark outlook.
-                </p>
-              )}
-              <p className="method-small">
-                Backtests use the currently available historical dataset, which
-                may include revisions. They do not recreate the exact releases
-                available at each past date. The lag is an availability
-                assumption, not a reconstruction of release vintages. U.S.
-                supply inputs do not represent the entire global market or
-                predict geopolitical shocks.
-              </p>
-            </div>
-          )}
+          {methodOpen && <ForecastMethodology outlook={outlook} />}
         </section>
         <div className="sources-row">
           <span>Data, with a source.</span>

@@ -1,18 +1,18 @@
 # Brent Outlook
 
-Mobile-first Brent dashboard with live Hyperliquid prices and monthly EIA benchmark projections for 3M, 6M, 1Y, and 3Y. 5Y/10Y keep monthly resolution; 15Y/30Y show annual averages. After month 36, explicitly labelled low/base/high scenarios replace statistical projections.
+A white, spacious Brent dashboard with live Hyperliquid prices and monthly EIA benchmark predictions calculated in the visitor's browser.
 
-**Stack:** Astro, React, Tailwind, GSAP, Rust/Wasm, Cloudflare Workers/KV.
+**Stack:** Astro, React, Tailwind, GSAP, Cloudflare Workers/KV, Chronos-Bolt through forecast-web/ONNX Runtime Web.
 
 ## Local setup
 
-Requires Node ≥22.23.4. The compiled Wasm binary and JavaScript bindings are committed; normal builds do not need Rust or wasm-bindgen.
+Requires Node >=22.23.4.
 
 ```sh
 npm ci
 ```
 
-Copy `.dev.vars.example` to `.dev.vars` and set your [EIA API key](https://www.eia.gov/opendata/). Keep existing secrets intact.
+Copy `.dev.vars.example` to `.dev.vars` and configure your [EIA API key](https://www.eia.gov/opendata/). Keep existing secrets intact. Without a key, live prices still work and the monthly outlook displays an unavailable state. No synthetic or archived prices are substituted in production.
 
 ```sh
 npm run dev -- --background
@@ -21,48 +21,43 @@ npx astro dev logs
 npx astro dev stop
 ```
 
-Open `http://localhost:4321`. Without an EIA key, live prices work but forecasts remain unavailable. Animations run in the browser; Wasm runs on the server.
+Open `http://localhost:4321`.
 
-## Model
+## Predictions on page open
 
-- Inputs: monthly Brent prices, U.S. commercial crude inventories (`PET.MCESTUS1.M`), and production (`PET.MCRFPUS2.M`), with a two-month fundamental-data lag.
-- Each month selects baseline, damped trend, mean reversion, or fundamental ridge regression using only already-known forecast errors. Alternatives must improve validation MAE by 2%.
-- Evaluation compares the adaptive strategy and baseline over the latest 60 observed target months. 80% intervals use matured strategy errors; actual coverage is reported.
-- Historical revisions and assumed publication lags limit backtests. Individual horizons can underperform baseline. Flat estimates remain possible when justified.
+- `/api/benchmark` proxies complete monthly Europe Brent spot averages from EIA. The API key stays on the server. It deduplicates nearby page opens for 60 seconds and retains the last valid data if EIA fails.
+- The browser runs Amazon's pretrained **Chronos-Bolt Small**, using the immutable, hash-verified community ONNX export pinned by **forecast-web 1.0.0**. The standard fp16 weight download is about 96 MB. An explicit **Lightweight** option selects Chronos-Bolt Tiny (about 18 MB), and remembers that choice on the device.
+- Inference runs in a cancellable Web Worker. WebGPU is attempted when available; CPU execution through ONNX Runtime's WebAssembly backend is the fallback. This is a pretrained neural model, separate from the retained custom Rust statistical engine.
+- Only monthly price history is input. This model does not consume live Hyperliquid ticks, fundamentals, or news. EIA observations follow their monthly publication schedule.
+- q50 is the estimate; q10 and q90 form a nominal 80% range. They are model quantiles, not a Brent-calibrated coverage guarantee. No legacy-model accuracy metrics are reused.
+- The browser caches model files where supported, and caches each model's prediction separately. The data fingerprint, model/export version, horizon and current month determine whether a calculation can be reused. Revisions or month rollover invalidate the prediction. Browser storage is optional.
+- Each page open checks EIA. **Check latest data** performs another check; unchanged inputs reuse the prediction. There is no background schedule, GitHub Actions workflow, server-side ML inference, or paid model API.
+- Future months through month 36 use model predictions. After month 36, 5Y/10Y monthly and 15Y/30Y annual views use the existing inflation/real-growth assumptions. These are scenarios, not model prediction intervals. Annual interval endpoints are averages of monthly bounds, not calibrated annual intervals.
 
-Daily refresh at 00:00 UTC stores results in `OUTLOOK` KV. Price/fundamental/daily-data revisions invalidate the cache; failures retain stale results. Version 0.3 adds scenario metadata and a new cache key. Scenario anchors rebuild at month rollover.
+The UI distinguishes the live Hyperliquid perpetual from the EIA monthly spot benchmark. It includes download progress, retry, retained results after refresh failures, keyboard-accessible month details and progressively expanded calendars.
 
-## Animation and research
+## Preserved legacy implementation
 
-GSAP coordinates a masked word entrance, chart drawing, scroll-triggered interval reveals, a moving horizon indicator and calendar groups. Reduced-motion displays final states immediately. Long calendars animate only groups entering the viewport.
+All Rust/Wasm source, generated bindings, benchmark inputs/results and original research remain in place. The previous dashboard is preserved as `src/components/Dashboard.legacy.tsx`; its browser tests are retained as `tests/browser/dashboard.legacy.ts`. The original `/api/outlook` statistical API and scheduled handler also remain available, but the active dashboard does not call them and `triggers.crons` is empty.
 
-Daily EIA Brent history supplies a month-end close baseline and volatility features for a native Rust benchmark. Ridge, elastic net and two ensembles are evaluated with frozen pre-holdout tuning. No challenger passed the 5% MAE/no-RMSE-regression gate on the included snapshot, so production model selection is unchanged. See [research findings and assumptions](docs/model-research.md).
-
-```sh
-npm run benchmark -- docs/benchmarks/input.json
-# Refresh the public dataset from a configured running dev server:
-npm run benchmark
-# Compare local Wasm performance against the original engine:
-npm run profile:model -- fb933385ab774f935539220e4a77ec184636f9b4
-```
-
-Scenario assumptions are 2% annual USD inflation and −2%/0%/+2% annual real price growth, compounded monthly. The low/high scenario range is not an 80% prediction interval.
+See [original setup and model documentation](docs/legacy-setup.md) and [historical model research](docs/model-research.md). Their model-selection and backtest results describe the legacy engine, not Chronos-Bolt.
 
 ## Checks
 
 ```sh
-npm run check && npm test && npm run build
-npx playwright install chromium
+npm run check
+npm test
+npm run build
 npm run test:e2e
 npm run test:smoke
 ```
 
-Browser/smoke tests need a running server. Override `PLAYWRIGHT_BASE_URL` for another port. Tests cover native/Wasm parity, data lag, causal selection, cache revisions, reconnects, and four viewport sizes.
+Browser tests require the background dev server. Override `PLAYWRIGHT_BASE_URL` for another port. They mock model outputs only inside the test suite, and cover fresh/cache/revised inputs, failed downloads and retries, four viewports, reduced motion, dialog focus and calendar pagination. Unit tests include numerical parity with the retained Rust scenario builder.
 
-After changing Rust sources, install Rustup and `cargo install wasm-bindgen-cli --version 0.2.105 --locked`, then run `npm run build:wasm`, `npm run test:rust`, and `npm run test:wasm`. Commit all four generated files in `src/generated/outlook/` with the source changes.
-
-For production-runtime checks, run `npx wrangler dev --config dist/server/wrangler.json --port 4322`, then `npm run test:cron` or `npm run preview:capture`.
+A real-model smoke check can be run with `npm run test:browser-model` against a running server. It uses the archived public EIA research snapshot explicitly for testing, downloads the actual pinned model, verifies browser inference and cache reuse, and saves screenshots/runtime details under ignored `.qa/`. This is not an accuracy benchmark or a current production-data check.
 
 ## Deploy
 
-Cloudflare build command: `npm run build` (runs only `astro build`). Deploy command: `npx wrangler deploy`. Configure the `OUTLOOK` KV binding and `EIA_API_KEY` Worker secret. For manual deployment, use `npm run deploy`. `.dev.vars` and `dist/` are ignored and must stay private.
+Build with `npm run build`, then deploy through the existing Cloudflare workflow or `npm run deploy`. Preserve the `OUTLOOK` KV binding and configure `EIA_API_KEY` as a Worker secret. No ML-service credentials are needed. Model weights come from Hugging Face; versioned ONNX runtime binaries come from jsDelivr. The dependency lockfile pins the runtime version; increment the prediction-cache version when changing model/runtime behavior.
+
+If a Content Security Policy is added, account for model/runtime downloads and module workers. Browser inference requires a secure origin (HTTPS, or localhost for development). Private browsing or disabled storage can require downloads again.

@@ -5,7 +5,7 @@
   "name": "track-oil-prices",
   "main": "./src/worker.ts",
   "kv_namespaces": [{ "binding": "OUTLOOK" }],
-  "triggers": { "crons": ["0 0 * * *"] },
+  "triggers": { "crons": [] },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
