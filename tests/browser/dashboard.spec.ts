@@ -163,3 +163,24 @@ test("failed model download can recover with the lightweight model", async ({ pa
   await expect(page.locator(".forecast-status")).toContainText("Chronos-Bolt Tiny");
   await expect(page.locator(".month-cell")).toHaveCount(12);
 });
+
+test("real worker requests model config from the website origin, without relying on third-party CORS", async ({ page }) => {
+  await setup(page, { seed: false });
+  await page.context().unrouteAll();
+  const configRequests: string[] = [];
+  const externalRequests: string[] = [];
+  await page.context().route("**/api/models/**/config.json", r => {
+    configRequests.push(r.request().url());
+    return r.fulfill({ status: 502, contentType: "application/json", body: '{"error":"test download failure"}' });
+  });
+  await page.context().route("https://huggingface.co/**", r => {
+    externalRequests.push(r.request().url());
+    return r.abort();
+  });
+  await page.goto("/");
+  await expect(page.locator(".outlook-empty")).toContainText("The prediction model could not load");
+  expect(configRequests).toHaveLength(1);
+  expect(new URL(configRequests[0]).origin).toBe(new URL(page.url()).origin);
+  expect(configRequests[0]).toContain("/api/models/chronos-bolt-small/");
+  expect(externalRequests).toEqual([]);
+});

@@ -9,6 +9,7 @@ const modelId = process.env.BROWSER_MODEL_ID || 'chronos-bolt-small';
 assert.ok(['chronos-bolt-small', 'chronos-bolt-tiny'].includes(modelId));
 const storageKey = `brent:prediction:v1:${modelId}`;
 const base = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4321';
+const live = process.env.BROWSER_MODEL_LIVE === '1';
 const addMonth = (s,n) => { const [y,m] = s.split('-').map(Number); return new Date(Date.UTC(y,m-1+n)).toISOString().slice(0,7); };
 const observations = input.values.map((value,i) => ({ month:addMonth(input.provenance.firstMonth,i), value }));
 const benchmark = { source:'EIA', instrument:'Europe Brent spot benchmark', unit:'USD/barrel', observations,
@@ -31,9 +32,20 @@ try {
     localStorage.setItem('brent:preferred-model',modelId);
   }, { storageKey, modelId });
   await page.emulateMedia({ reducedMotion:'reduce' });
-  await page.route('**/api/benchmark',r => r.fulfill({ json:benchmark }));
+  let inputProvenance = input.provenance;
+  if (live) {
+    const response = await fetch(`${base}/api/benchmark`);
+    assert.equal(response.status,200,'Live EIA data must be available');
+    const data = await response.json();
+    inputProvenance = { source:'Live EIA API', lastMonth:data.lastObservation, checkedAt:data.checkedAt };
+  } else await page.route('**/api/benchmark',r => r.fulfill({ json:benchmark }));
+  page.on('request',request => {
+    if (/^https:\/\/(huggingface\.co|cdn\.jsdelivr\.net)\//.test(request.url()))
+      errors.push('Model assets must load from the application origin');
+  });
   await page.goto(base, { waitUntil:'domcontentloaded' });
-  await expect(page.locator('.forecast-status')).toContainText('Calculated in your browser', { timeout:200000 });
+  await page.waitForFunction(() => /Calculated in your browser|Prediction unavailable/.test(document.querySelector('.forecast-status')?.textContent || ''), {}, { timeout:200000 });
+  assert.ok((await page.locator('.forecast-status').innerText()).includes('Calculated in your browser'), await page.locator('#outlook').innerText());
   const result = await page.evaluate(key => JSON.parse(localStorage.getItem(key)),storageKey);
   assert.equal(result.inference.modelId,modelId);
   assert.equal(result.inference.engine,'forecast-web');
@@ -54,7 +66,7 @@ try {
   await page.reload({ waitUntil:'domcontentloaded' });
   await expect(page.locator('.forecast-status')).toContainText('Saved calculation', { timeout:15000 });
   assert.deepEqual(errors,[]);
-  const summary = { modelId, inputProvenance:input.provenance, inference:result.inference,
+  const summary = { modelId, inputProvenance, inference:result.inference,
     performance:result.performance, projections:result.projections.length, cacheReuse:true, pageErrors:errors };
   writeFileSync(`.qa/${modelId}-runtime.json`,JSON.stringify(summary,null,2)+'\n');
   console.log(JSON.stringify(summary,null,2));

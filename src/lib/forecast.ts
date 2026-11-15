@@ -1,12 +1,13 @@
 import { addMonths, currentMonth, monthIndex, normalizeObservations } from "./data";
 import { createBrowserScenarios } from "./browserScenarios";
+import { MODEL_EXPORTS } from "./modelAssets";
 import type { Benchmark, BrowserInference, BrowserModel, Outlook, Projection } from "./types";
 
 export const FORECAST_VERSION = "browser-chronos-v1:forecast-web@1.0.0";
 // Match the immutable, hash-verified exports pinned by forecast-web 1.0.0.
 export const BROWSER_MODELS = {
-  "chronos-bolt-small": { name: "Chronos-Bolt Small", downloadMB: 96, revision: "b0239c09f35fe4cac94fada5ea207b692c30d3af" },
-  "chronos-bolt-tiny": { name: "Chronos-Bolt Tiny", downloadMB: 18, revision: "19060f64e0195f77d7c7416535087239f1f69e7b" },
+  "chronos-bolt-small": { name: "Chronos-Bolt Small", downloadMB: 96, revision: MODEL_EXPORTS["chronos-bolt-small"].revision },
+  "chronos-bolt-tiny": { name: "Chronos-Bolt Tiny", downloadMB: 18, revision: MODEL_EXPORTS["chronos-bolt-tiny"].revision },
 } as const;
 
 export function validateBenchmark(value: unknown): Benchmark {

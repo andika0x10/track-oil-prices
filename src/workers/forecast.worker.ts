@@ -1,5 +1,6 @@
 import { loadForecaster } from "forecast-web";
 import { BROWSER_MODELS } from "../lib/forecast";
+import { browserModelUrls } from "../lib/modelAssets";
 import type { BrowserModel } from "../lib/types";
 
 self.onmessage = async ({ data }: MessageEvent<{ modelId: BrowserModel; values: number[]; horizon: number }>) => {
@@ -7,6 +8,7 @@ self.onmessage = async ({ data }: MessageEvent<{ modelId: BrowserModel; values: 
   let model;
   try {
     model = await loadForecaster({ model: data.modelId, revision: BROWSER_MODELS[data.modelId].revision,
+      ...browserModelUrls(self.location.origin, data.modelId),
       dtype: "fp16", worker: false, cache: true,
       onProgress: (progress) => self.postMessage({ type: "progress", progress }) });
     const initializationMs = performance.now() - start;
